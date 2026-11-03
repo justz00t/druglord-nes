@@ -50,7 +50,9 @@ static u8 cx, cy;               /* text cursor */
 static u8 wx0 = 1, wx1 = 30;    /* word-wrap window (columns) */
 static u8 wy0 = 1, wy1 = 27;    /* rows used by wrapped text */
 
-static void wait_vblank(void) { while (!(PPUSTATUS & 0x80)) {} }
+static u8 pend;
+static void wait_vblank(void) { while (!(PPUSTATUS & 0x80)) {} if (pend < 6) pend++; }
+static void music_update(void);
 static void ppu_off(void) { if (ppu_on) { wait_vblank(); PPUMASK = 0; ppu_on = 0; } }
 static void ppu_show(void) {
     if (!ppu_on) {
@@ -161,6 +163,7 @@ static u8 read_pad(void) {
 static u8 vsync_pad(void) {
     u8 p;
     wait_vblank(); frames++;
+    music_update();
     p = read_pad();
     { u8 e = p & ~pad_old; pad_old = p; return e; }
 }
@@ -178,13 +181,13 @@ static u8 wait_btn(void) {          /* wait for any new button, return it */
 static void snd(u16 per, u8 n) {
     APU(0x04) = 0xBC; APU(0x06) = per & 255; APU(0x07) = 0x08 | (per >> 8);
     ppu_show();
-    while (n--) wait_vblank();
+    while (n--) { wait_vblank(); music_update(); }
     APU(0x04) = 0xB0;
 }
 static void noi(u8 idx, u8 vol, u8 n) {
     APU(0x0C) = 0x30 | vol; APU(0x0E) = idx; APU(0x0F) = 0x08;
     ppu_show();
-    while (n--) { wait_vblank(); if (vol) APU(0x0C) = 0x30 | --vol; }
+    while (n--) { wait_vblank(); music_update(); if (vol) APU(0x0C) = 0x30 | --vol; }
     APU(0x0C) = 0x30;
 }
 #define HZ(f) ((u16)(111860UL / (f)))
@@ -204,37 +207,51 @@ static void sfx(u8 n) {
     }
 }
 
-/* ---- title music: the piano riff of tools/title.mid on pulse 1, pulse 2 and triangle ---- */
-static u16 m_ev, m_acc;
-static u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_n;
-static void music_stop(void) { APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30; }
-static void music_init(void) {
+/* ---- music: tunes from tools/*.mid, played on pulse 1 / pulse 2 / triangle.  Each tune is a list of
+ *      events (wait, pulse-1 and pulse-2 note nibbles, triangle note).  The in-game tune leaves pulse 2 and
+ *      the noise channel free for sound effects. ---- */
+static const u8* m_d; static const u8* m_ab; static const u8* m_c;
+static const u16* m_pp; static const u16* m_tp;
+static u16 m_n, m_rate, m_ev, m_acc;
+static u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
+static void music_stop(void) {
+    music_on = 0;
+    APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30;
+}
+static void music_start(u8 game) {
     APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
     APU(0x01) = 0x08; APU(0x05) = 0x08;
-    m_ev = 0; m_acc = 0; m_wait = tune_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_n = 0;
-    music_stop();
+    if (game) { m_d = game_d; m_ab = game_ab; m_c = game_c; m_pp = game_pp; m_tp = game_tp; m_n = GAME_EVENTS; m_rate = GAME_RATE; m_use2 = 0; }
+    else { m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1; }
+    m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0;
+    pend = 0; music_on = 1;
 }
-static void music_note(u8 a, u8 b, u8 c) {
-    if (a) { u16 p = note_pp[a]; APU(0x02) = p & 255; APU(0x03) = 0x08 | (p >> 8); m_v1 = 12; }
-    if (b) { u16 p = note_pp[b]; APU(0x06) = p & 255; APU(0x07) = 0x08 | (p >> 8); m_v2 = 9; }
-    if (c) { u16 p = note_tp[c]; APU(0x0A) = p & 255; APU(0x0B) = 0x08 | (p >> 8); APU(0x08) = 0xFF; m_tage = 0; m_tri = 1; }
+static void music_note(u8 ab, u8 c) {
+    u8 a = ab >> 4, b = ab & 15;
+    if (a) { u16 p = m_pp[a]; APU(0x02) = p & 255; APU(0x03) = 0x08 | (p >> 8); m_v1 = 12; }
+    if (b && m_use2) { u16 p = m_pp[b]; APU(0x06) = p & 255; APU(0x07) = 0x08 | (p >> 8); m_v2 = 9; }
+    if (c) { u16 p = m_tp[c]; APU(0x0A) = p & 255; APU(0x0B) = 0x08 | (p >> 8); APU(0x08) = 0xFF; m_tage = 0; m_tri = 1; }
 }
 static void music_frame(void) {
-    m_acc += TUNE_RATE;
+    m_acc += m_rate;
     while (m_acc >= 256) {
         m_acc -= 256;
         if (m_wait) m_wait--;
         while (m_wait == 0) {
-            music_note(tune_a[m_ev], tune_b[m_ev], tune_c[m_ev]);
-            if (++m_ev >= TUNE_EVENTS) m_ev = 0;
-            m_wait = tune_d[m_ev];
+            music_note(m_ab[m_ev], m_c[m_ev]);
+            if (++m_ev >= m_n) m_ev = 0;
+            m_wait = m_d[m_ev];
         }
     }
-    m_n++;
-    if (!(m_n & 3)) { if (m_v1 > 3) m_v1--; if (m_v2 > 2) m_v2--; }
+    m_cnt++;
+    if (!(m_cnt & 3)) { if (m_v1 > 3) m_v1--; if (m_v2 > 2) m_v2--; }
     APU(0x00) = 0x70 | m_v1;        /* 25% duty, constant volume */
-    APU(0x04) = 0x70 | m_v2;
+    if (m_use2) APU(0x04) = 0x70 | m_v2;
     if (m_tri && ++m_tage > 40) { APU(0x08) = 0x80; m_tri = 0; }
+}
+/* called from the frame waits: plays the frames that have passed (vblanks are counted by wait_vblank) */
+static void music_update(void) {
+    while (pend) { pend--; if (music_on) music_frame(); }
 }
 
 /* ======================================================================== */
@@ -1137,6 +1154,7 @@ static void game(void) {
         init_game();
         draw_main();
         msg_area();
+        music_start(1);
         for (;;) {
             i16 sel;
             u8 adv = 0;
@@ -1197,6 +1215,7 @@ static void game(void) {
             }
             if (dead || !playing) break;
         }
+        music_stop();
         if (playing) {
             if (dead) show_death(); else show_win();
         }
@@ -1245,7 +1264,7 @@ void main(void) {
     PPUCTRL = 0; PPUMASK = 0;
     credits_screen();
     for (;;) {                                           /* credits once, then title -> game -> notice -> title ... */
-        music_init();
+        music_start(0);
         title_screen();
         ppu_show();
         blink = 0;
@@ -1253,13 +1272,12 @@ void main(void) {
             if ((blink & 31) == 0) start_text(!(blink & 32));
             else wait_vblank();
             frames++; blink++;
-            music_frame();
+            music_update();
             e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
             if (e & (BTN_START | BTN_A)) break;
         }
         music_stop();
         seed = ((u32)frames << 8) ^ 0x2A5Bu ^ (u32)frames * 977UL;
-        APU(0x15) = 0x0B;
         game();
         exit_screen();
     }

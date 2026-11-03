@@ -97,17 +97,18 @@ static void clear_screen(void) {
 }
 /* colour a band of rows: pal 0 white, 1 yellow, 2 red, 3 green.  An attribute byte covers
  * 4x4 tiles, two bits per 2x2 block, so colours change every two rows (y0 even, y1 odd). */
-static void colour_rows(u8 y0, u8 y1, u8 pal) {
+static void colour_cols(u8 y0, u8 y1, u8 bx0, u8 bx1, u8 pal) {    /* bx = 16-pixel column blocks 0..15 */
     u8 r, x, i;
     for (r = y0 >> 1; r <= (y1 >> 1); r++) {
         u8 mask = (r & 1) ? 0xF0 : 0x0F;
         u8 v = (pal | (pal << 2) | (pal << 4) | (pal << 6)) & mask;
-        for (x = 0; x < 8; x++) { i = (r >> 1) * 8 + x; attr[i] = (attr[i] & ~mask) | v; }
+        for (x = bx0 >> 1; x <= (bx1 >> 1); x++) { i = (r >> 1) * 8 + x; attr[i] = (attr[i] & ~mask) | v; }
     }
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0;
     for (i = 0; i < 64; i++) PPUDATA = attr[i];
 }
+static void colour_rows(u8 y0, u8 y1, u8 pal) { colour_cols(y0, y1, 0, 15, pal); }
 
 /* ---- printing ---- */
 static void pc(u8 ch) { put(cx, cy, ch); cx++; }
@@ -203,33 +204,37 @@ static void sfx(u8 n) {
     }
 }
 
-/* ---- title music: pulse 1 = melody, noise = drums, 1 step = 10 frames ---- */
-static u8 m_step, m_tick, m_vol, m_dvol, m_dkind;
+/* ---- title music: the piano riff of tools/title.mid on pulse 1, pulse 2 and triangle ---- */
+static u16 m_ev, m_acc;
+static u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_n;
+static void music_stop(void) { APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30; }
 static void music_init(void) {
-    APU(0x15) = 0x0B;               /* pulse 1, pulse 2, noise */
-    m_step = 0; m_tick = 0; m_vol = 0; m_dvol = 0;
+    APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
+    APU(0x01) = 0x08; APU(0x05) = 0x08;
+    m_ev = 0; m_acc = 0; m_wait = tune_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_n = 0;
+    music_stop();
 }
-static void music_stop(void) { APU(0x00) = 0x30; APU(0x0C) = 0x30; }
+static void music_note(u8 a, u8 b, u8 c) {
+    if (a) { u16 p = note_pp[a]; APU(0x02) = p & 255; APU(0x03) = 0x08 | (p >> 8); m_v1 = 12; }
+    if (b) { u16 p = note_pp[b]; APU(0x06) = p & 255; APU(0x07) = 0x08 | (p >> 8); m_v2 = 9; }
+    if (c) { u16 p = note_tp[c]; APU(0x0A) = p & 255; APU(0x0B) = 0x08 | (p >> 8); APU(0x08) = 0xFF; m_tage = 0; m_tri = 1; }
+}
 static void music_frame(void) {
-    if (m_tick == 0) {
-        u8 n = tune_mel[m_step], d = tune_drm[m_step];
-        if (n) {
-            u16 p = note_period[n];
-            APU(0x02) = p & 255; APU(0x03) = 0x08 | (p >> 8);
-            m_vol = 12;
-        }
-        if (d) {
-            m_dkind = d;
-            m_dvol = (d == 1) ? 5 : (d == 2) ? 9 : 11;
-            APU(0x0E) = (d == 1) ? 3 : (d == 2) ? 6 : 9;
-            APU(0x0F) = 0x08;
+    m_acc += TUNE_RATE;
+    while (m_acc >= 256) {
+        m_acc -= 256;
+        if (m_wait) m_wait--;
+        while (m_wait == 0) {
+            music_note(tune_a[m_ev], tune_b[m_ev], tune_c[m_ev]);
+            if (++m_ev >= TUNE_EVENTS) m_ev = 0;
+            m_wait = tune_d[m_ev];
         }
     }
-    APU(0x00) = 0xB0 | m_vol;
-    APU(0x0C) = 0x30 | m_dvol;
-    if (m_vol) m_vol -= (m_tick & 1) ? 1 : 0;
-    if (m_dvol) m_dvol -= (m_dkind == 1 || (m_tick & 1)) ? 1 : 0;
-    if (++m_tick >= 10) { m_tick = 0; if (++m_step >= TUNE_STEPS) m_step = 0; }
+    m_n++;
+    if (!(m_n & 3)) { if (m_v1 > 3) m_v1--; if (m_v2 > 2) m_v2--; }
+    APU(0x00) = 0x70 | m_v1;        /* 25% duty, constant volume */
+    APU(0x04) = 0x70 | m_v2;
+    if (m_tri && ++m_tage > 40) { APU(0x08) = 0x80; m_tri = 0; }
 }
 
 /* ======================================================================== */
@@ -1063,7 +1068,8 @@ static u32 score_calc(i32 total, i16 pct) {
     p1 = (u32)k * 75000UL; if (p1 > 700000UL) p1 = 700000UL;
     if (total_days > 0) {
         if (total_days < SCORE_DAYS_FIRST) p2 = 500000UL;
-        else p2 = score_days[(total_days > 1023 ? 1023 : total_days) - SCORE_DAYS_FIRST];
+        else if (total_days <= 700) p2 = score_days[total_days - SCORE_DAYS_FIRST];
+        else p2 = score_days[700 - SCORE_DAYS_FIRST] * 490000UL / ((u32)total_days * total_days) * 1UL;   /* beyond the table: ~ days^-2 */
     }
     p3 = score_deals[pct < 0 ? 0 : (pct > 100 ? 100 : pct)];
     p4 = (u32)((i32)gun_type * num_guns) * 1500UL;
@@ -1107,7 +1113,7 @@ static u8 ask_play_again(void) {
     ps_at(1, 13, "play again?");
     return yn();
 }
-/* the NOTICE shown when you quit */
+/* the NOTICE shown when you quit; A goes back to the title screen */
 static void exit_screen(void) {
     u8 x;
     page();
@@ -1117,47 +1123,15 @@ static void exit_screen(void) {
     ps_at(8, 4, "* * *  NOTICE  * * *");
     wx0 = 2; wx1 = 29; wy0 = 6; wy1 = 21; cx = 2; cy = 6;
     say("This game is intended simply as a diversion from everyday life. In no way am I condoning or encouraging drug dealing or drug use in any way, shape, or form.\n\nTo quote from an excellent anti-drug movie, New Jack City:\n\n\"The drug epidemic isn't a black thing, it isn't a white thing. It's a death thing. And death doesn't care what color you are.\"");
-    colour_rows(4, 5, 2);
+    colour_cols(4, 5, 4, 13, 2);                         /* only the heading is red, the frame stays white */
     ps_at(1, 25, "Thank you for playing DrugLord.");
     colour_rows(24, 25, 3);
     ppu_show();
-    for (;;) vsync_pad();
+    while (!(wait_btn() & BTN_A)) {}
 }
 
-static void title_screen(void) {
-    clear_screen(); set_palette();
-    ps_at(2, 3, "\x01\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x03");
-    ps_at(2, 4, "\x04                          \x04");
-    ps_at(2, 5, "\x04     D R U G L O R D      \x04");
-    ps_at(2, 6, "\x04                          \x04");
-    ps_at(2, 7, "\x05\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x06");
-    ps_at(9, 10, "Version 2.01");
-    ps_at(6, 13, "Written by Phil Erwin");
-    ps_at(5, 14, "Copyright 1991-93");
-    ps_at(8, 15, "FantasyWare Inc.");
-    ps_at(7, 17, "NES port by justz00t");
-    colour_rows(2, 7, 2); colour_rows(12, 15, 1);
-    ps_at(9, 22, "PRESS START");
-}
-
-void main(void) {
-    u8 e, blink = 0;
-    wait_vblank(); wait_vblank();
-    PPUCTRL = 0; PPUMASK = 0;
-    music_init();
-    title_screen();
-    ppu_show();
-    for (;;) {                                           /* title: wait for START, music plays */
-        wait_vblank(); frames++;
-        music_frame();
-        e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
-        if (++blink & 32) put(9, 22, ' '); else put(9, 22, 'P');
-        ppu_show();
-        if (e & (BTN_START | BTN_A)) break;
-    }
-    music_stop();
-    seed = ((u32)frames << 8) ^ 0x2A5Bu ^ (u32)frames * 977UL;
-    APU(0x15) = 0x0B;
+/* one session: play games until the player does not want another */
+static void game(void) {
     for (;;) {                                           /* one pass = one game */
         playing = 1;
         init_game();
@@ -1228,5 +1202,65 @@ void main(void) {
         }
         if (!ask_play_again()) break;
     }
-    exit_screen();
+}
+
+/* shown for 4 seconds before the title screen */
+static void credits_screen(void) {
+    u8 n;
+    clear_screen(); set_palette();
+    ps_at(5, 8, "Written by Phil Erwin");
+    ps_at(7, 10, "Copyright 1991-93");
+    ps_at(8, 12, "FantasyWare Inc.");
+    ps_at(6, 15, "NES port by justz00t");
+    colour_rows(8, 13, 1); colour_rows(14, 15, 3);
+    ppu_show();
+    for (n = 0; n < 240; n++) wait_vblank();
+}
+
+#define START_X 10
+#define START_Y 18
+static void title_screen(void) {
+    clear_screen(); set_palette();
+    ps_at(2, 9,  "\x01\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x03");
+    ps_at(2, 10, "\x04                          \x04");
+    ps_at(2, 11, "\x04     D R U G L O R D      \x04");
+    ps_at(2, 12, "\x04                          \x04");
+    ps_at(2, 13, "\x05\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x06");
+    ps_at(START_X, START_Y, "PRESS START");
+    colour_rows(8, 13, 2);
+}
+/* draw or erase "PRESS START" during vblank, without ever blanking the screen (no flicker) */
+static void start_text(u8 on) {
+    const char* s = "PRESS START";
+    u8 i;
+    wait_vblank();
+    ppu_at(START_X, START_Y);
+    for (i = 0; i < 11; i++) PPUDATA = on ? (u8)s[i] : ' ';
+    PPUCTRL = 0; PPUSCROLL = 0; PPUSCROLL = 0;
+}
+
+void main(void) {
+    u8 e, blink;
+    wait_vblank(); wait_vblank();
+    PPUCTRL = 0; PPUMASK = 0;
+    credits_screen();
+    for (;;) {                                           /* credits once, then title -> game -> notice -> title ... */
+        music_init();
+        title_screen();
+        ppu_show();
+        blink = 0;
+        for (;;) {                                       /* title: wait for START, music plays */
+            if ((blink & 31) == 0) start_text(!(blink & 32));
+            else wait_vblank();
+            frames++; blink++;
+            music_frame();
+            e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
+            if (e & (BTN_START | BTN_A)) break;
+        }
+        music_stop();
+        seed = ((u32)frames << 8) ^ 0x2A5Bu ^ (u32)frames * 977UL;
+        APU(0x15) = 0x0B;
+        game();
+        exit_screen();
+    }
 }

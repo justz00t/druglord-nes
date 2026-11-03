@@ -22,7 +22,7 @@ It is **not** part of the byte-matched `c/` folder, which is never touched.
 The whole game: 8 cities and 8 drugs, buying and selling, the air fares, the bank, the loan shark and his thugs,
 the hospital, the ten random events (cops fight with friends or a posse and guns, mugger, trenchcoat, gun smuggler, blackmail,
 price events, brownies), the status/rank system, the final score and the NOTICE screen when you quit.
-Title music is `tools/title.mid` played on the NES sound channels.
+On start-up a credits screen (4 seconds) is followed by the title screen. The title music is the piano riff of `tools/title.mid`, split over the pulse and triangle channels (24 bars, looped). Quitting shows the NOTICE screen; A returns to the title screen.
 
 The rules, odds and formulas are the DOS original's (see "GAME RULES AND FORMULAS" in `c/DRUGLORD.C`), including its
 random number generator.  The NES has no floating point, so the formulas are redone with integers in a way that gives

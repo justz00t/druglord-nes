@@ -207,9 +207,8 @@ static void sfx(u8 n) {
     }
 }
 
-/* ---- music: tunes from tools/*.mid, played on pulse 1 / pulse 2 / triangle.  Each tune is a list of
- *      events (wait, pulse-1 and pulse-2 note nibbles, triangle note).  The in-game tune leaves pulse 2 and
- *      the noise channel free for sound effects. ---- */
+/* ---- music: the title tune from tools/title.mid, played on pulse 1 / pulse 2 / triangle.  Each tune is a list of
+ *      events (wait, pulse-1 and pulse-2 note nibbles, triangle note). ---- */
 static const u8* m_d; static const u8* m_ab; static const u8* m_c;
 static const u16* m_pp; static const u16* m_tp;
 static u16 m_n, m_rate, m_ev, m_acc;
@@ -218,11 +217,10 @@ static void music_stop(void) {
     music_on = 0;
     APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30;
 }
-static void music_start(u8 game) {
+static void music_start(void) {
     APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
     APU(0x01) = 0x08; APU(0x05) = 0x08;
-    if (game) { m_d = game_d; m_ab = game_ab; m_c = game_c; m_pp = game_pp; m_tp = game_tp; m_n = GAME_EVENTS; m_rate = GAME_RATE; m_use2 = 0; }
-    else { m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1; }
+    m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1;
     m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0;
     pend = 0; music_on = 1;
 }
@@ -479,6 +477,12 @@ static i16 choose(u8 x, u8 y, u8 n, i16 start) {
     for (i = 0; i < n; i++) put(x, y + i, i == s ? 0x10 : ' ');
     for (;;) {
         e = wait_btn();
+#ifdef DEBUG
+        if ((pad_old & (BTN_SELECT | BTN_START)) == (BTN_SELECT | BTN_START)) {      /* debug build: SELECT+START */
+            for (i = 0; i < n; i++) put(x, y + i, ' ');
+            return -2;
+        }
+#endif
         o = s;
         if (e & BTN_UP) s = s ? s - 1 : n - 1;
         else if (e & BTN_DOWN) s = s + 1 < n ? s + 1 : 0;
@@ -1077,6 +1081,13 @@ static void show_death(void) {
     press_a();
 }
 
+static u32 score_days_at(u16 idx) {
+    u32 v = SCORE_DAYS_START;
+    u16 i;
+    for (i = 0; i < idx; i++) v -= score_days_d[i];
+    return v;
+}
+
 static u32 score_calc(i32 total, i16 pct) {
     u32 p1, p2 = 0, p3, p4;
     u8 k = 1, i;
@@ -1085,10 +1096,13 @@ static u32 score_calc(i32 total, i16 pct) {
     p1 = (u32)k * 75000UL; if (p1 > 700000UL) p1 = 700000UL;
     if (total_days > 0) {
         if (total_days < SCORE_DAYS_FIRST) p2 = 500000UL;
-        else if (total_days <= 700) p2 = score_days[total_days - SCORE_DAYS_FIRST];
-        else p2 = score_days[700 - SCORE_DAYS_FIRST] * 490000UL / ((u32)total_days * total_days) * 1UL;   /* beyond the table: ~ days^-2 */
+        else if (total_days <= 700) p2 = score_days_at(total_days - SCORE_DAYS_FIRST);
+        else p2 = score_days_at(700 - SCORE_DAYS_FIRST) * 490000UL / ((u32)total_days * total_days) * 1UL;   /* beyond the table: ~ days^-2 */
     }
-    p3 = score_deals[pct < 0 ? 0 : (pct > 100 ? 100 : pct)];
+    {
+        i16 q = pct < 0 ? 0 : (pct > 100 ? 100 : pct);
+        p3 = score_deals[q];
+    }
     p4 = (u32)((i32)gun_type * num_guns) * 1500UL;
     return p1 + p2 + p3 + p4;
 }
@@ -1147,6 +1161,31 @@ static void exit_screen(void) {
     while (!(wait_btn() & BTN_A)) {}
 }
 
+/* the loan shark's thugs come for you */
+static void thugs_scene(void) {
+    u8 n;
+    page();
+    say("You're ambushed in a dark alley by Guido's thugs, must be 'bout ten guys! The boss-man say \"Oh, man, you should'na missed de deadline, now me and boys are gonna have to break your legs! Maybe next time you'll learn, eh?\"\nDey take yous from all directions, you ain't gotta chance...\nOne steps out with a baseball bat and...\n");
+    delay(120);
+    thugs++;
+    for (n = 0; n < thugs; n++) {
+        say("* * * C R A C K ! ! * * *\n");
+        health -= 25; angry = 1;
+        sfx(3);
+        delay(60);
+    }
+    if (health > 0) {
+        say("\"Oh, one more 'ting... you got a week to come up with dinero, or we'll be back, comprende?\"");
+        loan_days = 7;
+    } else dead = 1;
+    press_a();
+    draw_main();
+}
+
+#ifdef DEBUG
+static void debug_menu(void);
+#endif
+
 /* one session: play games until the player does not want another */
 static void game(void) {
     for (;;) {                                           /* one pass = one game */
@@ -1154,7 +1193,6 @@ static void game(void) {
         init_game();
         draw_main();
         msg_area();
-        music_start(1);
         for (;;) {
             i16 sel;
             u8 adv = 0;
@@ -1169,6 +1207,9 @@ static void game(void) {
             ps_at(2, 26, "Go to de Hospital");
             ps_at(2, 27, "Quit de game");
             sel = choose(0, 21, 7, 0);
+#ifdef DEBUG
+            if (sel == -2) { debug_menu(); draw_main(); continue; }
+#endif
             if (sel < 0) continue;
             switch (sel) {
             case 0: adv = menu_buy(); break;
@@ -1194,25 +1235,7 @@ static void game(void) {
             if (dead || !playing) break;
             if (rnd() % 5 == 0) do_event((u8)(rnd() % 10));
             if (dead || !playing) break;
-            if (loan_days < 0 && loan_flag == 1) {          /* the loan shark's thugs */
-                u8 n;
-                page();
-                say("You're ambushed in a dark alley by Guido's thugs, must be 'bout ten guys! The boss-man say \"Oh, man, you should'na missed de deadline, now me and boys are gonna have to break your legs! Maybe next time you'll learn, eh?\"\nDey take yous from all directions, you ain't gotta chance...\nOne steps out with a baseball bat and...\n");
-                delay(120);
-                thugs++;
-                for (n = 0; n < thugs; n++) {
-                    say("* * * C R A C K ! ! * * *\n");
-                    health -= 25; angry = 1;
-                    sfx(3);
-                    delay(60);
-                }
-                if (health > 0) {
-                    say("\"Oh, one more 'ting... you got a week to come up with dinero, or we'll be back, comprende?\"");
-                    loan_days = 7;
-                } else dead = 1;
-                press_a();
-                draw_main();
-            }
+            if (loan_days < 0 && loan_flag == 1) thugs_scene();
             if (dead || !playing) break;
         }
         music_stop();
@@ -1258,25 +1281,108 @@ static void start_text(u8 on) {
     PPUCTRL = 0; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 
+/* the title screen with its music; returns when START (or A) is pressed */
+static void title_wait(void) {
+    u8 e, blink = 0;
+    music_start();
+    title_screen();
+    ppu_show();
+    for (;;) {
+        if ((blink & 31) == 0) start_text(!(blink & 32));
+        else wait_vblank();
+        frames++; blink++;
+        music_update();
+        e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
+        if (e & (BTN_START | BTN_A)) break;
+    }
+    music_stop();
+}
+
+#ifdef DEBUG
+/* ======================================================================== */
+/*  Debug build only: SELECT+START in the main menu opens this menu         */
+/* ======================================================================== */
+static const char* const snd_name[] = {
+    "Beep", "Denied", "Deal", "Siren", "News", "EXTRA!", "Hit",
+    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5",
+    "Menu click", "Title music", "Back"};
+static const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 20};
+#define SND_COUNT 15
+static void sound_test(void) {
+    u8 i;
+    i16 s = 0;
+    for (;;) {
+        page();
+        ps_at(7, 1, "SOUND TEST");
+        for (i = 0; i < SND_COUNT; i++) ps_at(2, 4 + i, snd_name[i]);
+        s = choose(0, 4, SND_COUNT, s);
+        if (s < 0 || s == SND_COUNT - 1) return;
+        if (s == SND_COUNT - 2) {                        /* title music until B */
+            music_start();
+            ppu_show();
+            while (!(vsync_pad() & BTN_B)) {}
+            music_stop();
+        } else sfx(snd_id[s]);
+    }
+}
+
+static void dbg_wait_release(void) { while (pad_old & (BTN_SELECT | BTN_START)) vsync_pad(); }
+
+static const char* const dbg_name[] = {
+    "Cop fight", "Cops sell", "Cheap", "Bust", "Factory",
+    "Brownies", "Mugger 1", "Mugger 2", "Mugger 3", "Trenchcoat",
+    "Smuggler", "Blackmail", "Thugs", "Death", "Win score",
+    "Play again", "Notice", "Credits", "Title", "SOUND TEST", "Back"};
+#define DBG_COUNT 21
+static void debug_menu(void) {
+    u8 i;
+    i16 s = 0;
+    dbg_wait_release();
+    for (;;) {
+        page();
+        ps_at(6, 1, "DEBUG MENU");
+        for (i = 0; i < DBG_COUNT; i++) ps_at(2, 3 + i, dbg_name[i]);
+        s = choose(0, 3, DBG_COUNT, s);
+        if (s < 0 || s == DBG_COUNT - 1) { dbg_wait_release(); return; }
+        mkt_today = 0; dead = 0;
+        if (status < 120) status = 120;                  /* so every option of every event is available */
+        if (cash < 20000L) cash = 20000L;
+        if (hold < 40) hold = 40;
+        if (health < 50) health = 100;
+        switch (s) {
+        case 0: if (gun_type == 0) { gun_type = 2; num_guns = 3; } cop_fight(); break;
+        case 1: ev_cops_sell(); break;
+        case 2: ev_cheap(); break;
+        case 3: ev_newspaper(); break;
+        case 4: ev_factory(); break;
+        case 5: inv[5] = 3; ev_brownies(); break;
+        case 6: ev_mugger(); break;
+        case 7: { i16 st = status; i32 ca = cash; status = 1; cash = 1000; ev_mugger(); status = st; cash = ca; } break;
+        case 8: { i16 st = status; i32 ca = cash; status = 1; cash = 10; ev_mugger(); status = st; cash = ca; } break;
+        case 9: hold = 40; ev_trenchcoat(); break;
+        case 10: ev_gun_smuggler(); break;
+        case 11: ev_blackmail(); break;
+        case 12: thugs_scene(); break;
+        case 13: show_death(); break;
+        case 14: show_win(); break;
+        case 15: ask_play_again(); break;
+        case 16: exit_screen(); break;
+        case 17: credits_screen(); break;
+        case 18: title_wait(); break;
+        case 19: sound_test(); break;
+        }
+        dead = 0;
+        if (health <= 0) health = 100;
+    }
+}
+#endif
+
 void main(void) {
-    u8 e, blink;
     wait_vblank(); wait_vblank();
     PPUCTRL = 0; PPUMASK = 0;
     credits_screen();
     for (;;) {                                           /* credits once, then title -> game -> notice -> title ... */
-        music_start(0);
-        title_screen();
-        ppu_show();
-        blink = 0;
-        for (;;) {                                       /* title: wait for START, music plays */
-            if ((blink & 31) == 0) start_text(!(blink & 32));
-            else wait_vblank();
-            frames++; blink++;
-            music_update();
-            e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
-            if (e & (BTN_START | BTN_A)) break;
-        }
-        music_stop();
+        title_wait();
         seed = ((u32)frames << 8) ^ 0x2A5Bu ^ (u32)frames * 977UL;
         game();
         exit_screen();

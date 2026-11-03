@@ -5,7 +5,7 @@ It is **not** part of the byte-matched `c/` folder, which is never touched.
 
 `druglord.nes` is the ready-to-run ROM (mapper 0 / NROM, 32 KB PRG, 8 KB CHR). Any NES emulator will run it.
 
-`druglord-debug.nes` is the same game plus a **debug menu**: press SELECT and START together on the main menu to pick any event or screen (cop fight, every random event, mugger variants, thugs, death, win/score, play again, NOTICE, credits, title) or open the **sound test**, which plays every sound effect and the title music. The regular ROM has no debug menu.
+`druglord-debug.nes` is the same game plus a **debug menu**: press SELECT and START together on the main menu to pick any event or screen (cop fight, every random event, mugger variants, thugs, death, win, replay prompt, NOTICE, credits, title) or open the **sound test**, which plays every sound effect and the title music. The regular ROM has no debug menu.
 
 ## Controls
 

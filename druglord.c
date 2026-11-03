@@ -50,12 +50,15 @@ static u8 cx, cy;               /* text cursor */
 static u8 wx0 = 1, wx1 = 30;    /* word-wrap window (columns) */
 static u8 wy0 = 1, wy1 = 27;    /* rows used by wrapped text */
 
+static u8 ink, attr_dirty;      /* current text colour (palette 0..3); pc() colours its 2x2-tile attribute block with it */
+static u8 attr[64];
 static u8 pend;
 static void wait_vblank(void) { while (!(PPUSTATUS & 0x80)) {} if (pend < 6) pend++; }
 static void music_update(void);
 static void ppu_off(void) { if (ppu_on) { wait_vblank(); PPUMASK = 0; ppu_on = 0; } }
 static void ppu_show(void) {
     if (!ppu_on) {
+        if (attr_dirty) { u8 i; attr_dirty = 0; latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0; for (i = 0; i < 64; i++) PPUDATA = attr[i]; }
         wait_vblank();
         PPUCTRL = 0; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
         PPUMASK = 0x0A; ppu_on = 1;
@@ -83,18 +86,18 @@ static void clear_rows(u8 y0, u8 y1) {      /* inclusive */
 }
 static void set_palette(void) {
     static const u8 pal[16] = {0x0F, 0x30, 0x10, 0x00,  0x0F, 0x28, 0x18, 0x00,
-                               0x0F, 0x16, 0x06, 0x00,  0x0F, 0x2A, 0x1A, 0x00};
+                               0x0F, 0x16, 0x06, 0x00,  0x0F, 0x2C, 0x1C, 0x00};
     u8 i;
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
     for (i = 0; i < 32; i++) PPUDATA = pal[i & 15];
 }
-static u8 attr[64];
 static void clear_screen(void) {
     u16 i;
     ppu_off(); ppu_at(0, 0);
     for (i = 0; i < 1024; i++) PPUDATA = 0;
     for (i = 0; i < 64; i++) attr[i] = 0;
+    ink = 0; attr_dirty = 0;
     cx = 1; cy = 1;
 }
 /* colour a band of rows: pal 0 white, 1 yellow, 2 red, 3 green.  An attribute byte covers
@@ -109,11 +112,23 @@ static void colour_cols(u8 y0, u8 y1, u8 bx0, u8 bx1, u8 pal) {    /* bx = 16-pi
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0;
     for (i = 0; i < 64; i++) PPUDATA = attr[i];
+    attr_dirty = 0;
+}
+static void pal3(u8 a, u8 b) {                      /* palette 3 = cyan by default; green for a few screens */
+    ppu_off();
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = a; PPUDATA = b;
 }
 static void colour_rows(u8 y0, u8 y1, u8 pal) { colour_cols(y0, y1, 0, 15, pal); }
 
 /* ---- printing ---- */
-static void pc(u8 ch) { put(cx, cy, ch); cx++; }
+static void pc(u8 ch) {
+    put(cx, cy, ch);
+    if (ch != ' ') {
+        u8 i = (cy >> 2) * 8 + (cx >> 2), sh = ((cy & 2) ? 4 : 0) + ((cx & 2) ? 2 : 0), o = attr[i];
+        if (((o >> sh) & 3) != ink) { attr[i] = (o & ~(3 << sh)) | (ink << sh); attr_dirty = 1; }
+    }
+    cx++;
+}
 static void at(u8 x, u8 y) { cx = x; cy = y; }
 static void ps(const char* s) { while (*s) pc((u8)*s++); }
 static void ps_at(u8 x, u8 y, const char* s) { at(x, y); ps(s); }
@@ -397,6 +412,7 @@ static void say(const char* s) {
         while (len--) pc((u8)*s++);
     }
 }
+static void sayc(u8 col, const char* s) { ink = col; say(s); }
 static void say_num(i32 v) {
     u8 l;
     ltoa_s(v);
@@ -413,7 +429,7 @@ static void say_money(i32 v) {
 }
 static void press_a(void) {
     u8 e;
-    ps_at(1, 27, "Press A to continue");
+    ink = 3; ps_at(1, 27, "Press A to continue");
     do { e = wait_btn(); } while (!(e & BTN_A));
     fill(1, 27, ' ', 31);
 }
@@ -425,7 +441,7 @@ static void page(void) {
 }
 static u8 yn(void) {                /* A = yes, B = no */
     u8 e;
-    ps_at(1, 26, "A = Yes     B = No");
+    ink = 1; ps_at(1, 26, "A = Yes     B = No");
     for (;;) {
         e = wait_btn();
         if (e & BTN_A) return 1;
@@ -536,7 +552,7 @@ static void fight_row(u8 side, u8 i, i16 hp) {
     at(x + 9, y);
     if (hp > 0) pn_l(hp, 4); else ps("dead");
 }
-static void fight_msg(const char* s) { fill(1, 22, ' ', 30); fill(1, 23, ' ', 30); at(1, 22); ps(s); }
+static void fight_msg(const char* s) { fill(1, 22, ' ', 30); fill(1, 23, ' ', 30); at(1, 22); ink = 2; ps(s); ink = 0; }
 
 static void cop_fight(void) {
     i16 choice, nf = 0, nc, ct, shots = 1, i, t, copsAlive, partyAlive, result = 0, att, si;
@@ -544,9 +560,9 @@ static void cop_fight(void) {
     cop_flag = 0;
     if (gun_type >= 4) shots = 3;
     page();
-    ps_at(1, 1, "The cops are on your tail!!!");
+    ink = 2; ps_at(1, 1, "The cops are on your tail!!!");
     sfx(5);
-    ps_at(1, 3, "Do you wanna");
+    ink = 3; ps_at(1, 3, "Do you wanna");
     ps_at(3, 4, "Go at it alone");
     ps_at(3, 5, "Call a friend (1 status pt.)");
     ps_at(3, 6, "Call a posse (5 status pts.)");
@@ -555,7 +571,7 @@ static void cop_fight(void) {
         if (choice < 0) continue;
         choice++;
         if ((choice == 2 && status == 0) || (choice == 3 && status < 5)) {
-            ps_at(1, 8, "You don't have enough points!");
+            ink = 2; ps_at(1, 8, "You don't have enough points!");
             sfx(3); delay(90);
             fill(1, 8, ' ', 30);
             continue;
@@ -569,8 +585,9 @@ static void cop_fight(void) {
         status -= 5;
     }
     clear_screen();
-    ps_at(2, 1, "* * *  D R U G L O R D  * * *");
-    ps_at(1, 3, "YOU"); ps_at(17, 3, "COPS");
+    ink = 2; ps_at(2, 1, "* * *  D R U G L O R D  * * *");
+    ink = 1; ps_at(1, 3, "YOU"); ps_at(17, 3, "COPS");
+    ink = 0;
     php[0] = health;
     for (i = 1; i <= nf; i++) php[i] = rnd() % 10 + dice(10, status / 50) + 25;
     /* how many cops and what gun they carry (re-rolled until the gun type is 2 or 3) */
@@ -598,7 +615,7 @@ static void cop_fight(void) {
     at(1, 17); ps("Cops: "); ps(gun_name[ct]);
     for (;;) {
         fill(1, 20, ' ', 30);
-        ps_at(1, 20, "(F)ight or (R)un?  A=F B=R");
+        ink = 0; ps_at(1, 20, "(F)ight or (R)un?  A=F B=R");
         for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
         if (k & BTN_B) {                                 /* run */
             fight_msg("You take off running...");
@@ -616,7 +633,7 @@ static void cop_fight(void) {
                     for (;;) {
                         do { t = rnd() % nc; } while (chp[t] == 0);
                         sfx(gun_type + 10);
-                        fill(1, 22, ' ', 30); at(1, 22);
+                        fill(1, 22, ' ', 30); at(1, 22); ink = 2;
                         ps(si < num_guns ? "Firing at cop " : "Punching cop "); pn(t + 1);
                         if (rnd() % 2 == 0) {
                             ps(" *Hit!*"); sfx(8);
@@ -663,7 +680,7 @@ static void cop_fight(void) {
         if (!(ct < gun_type && nc <= num_guns)) {
             fill(1, 24, ' ', 30);
             ps_at(1, 24, nc == 1 ? "Take his gun, man? (Y/N)" : "Take their guns, man? (Y/N)");
-            ps_at(1, 26, "A = Yes     B = No");
+            ink = 1; ps_at(1, 26, "A = Yes     B = No");
             for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
             if (k & BTN_A) {
                 fight_msg("You want 'em, you got 'em! What a bunch'a chumps!");
@@ -675,7 +692,7 @@ static void cop_fight(void) {
             i32 gold = (i32)nc * ct * 200;
             fill(1, 22, ' ', 30); fill(1, 23, ' ', 30);
             at(1, 22); wx0 = 1; wx1 = 30; wy0 = 22; wy1 = 26;
-            say("You sell the "); say_num(nc); say(" guns that were on the pigs you wasted for ");
+            sayc(3, "You sell the "); say_num(nc); say(" guns that were on the pigs you wasted for ");
             say_num(gold); say(" bucks! This'll teach 'em not to mess with ya, huh?");
             cash += gold; status += nc;
             delay(200);
@@ -705,14 +722,14 @@ static u8 market_event(u8 count, i16 mul_pct) {
 static void ev_cops_sell(void) {
     if (mkt_today == 1) return;
     page();
-    say("\"Hey man, check dis out!  Word has it on de street dat deres des cops, see? They musta decided that workin' for 25 G's a year ain't enough, so de've decided ta sell some of de take drugs confiscated on de side! De market is flooded with");
+    sayc(3, "\"Hey man, check dis out!  Word has it on de street dat deres des cops, see? They musta decided that workin' for 25 G's a year ain't enough, so de've decided ta sell some of de take drugs confiscated on de side! De market is flooded with");
     market_event(3, 70);
     say("!\"");
     sfx(6); press_a();
 }
 static void ev_cheap(void) {
     page();
-    say("\"Hey, I heard it through de grapevine dat deres some cheap homemade stuff available from some of the homeboys downtown.  Real primo stuff, dey say! All I hear on de streets is 'Cheap");
+    sayc(0, "\"Hey, I heard it through de grapevine dat deres some cheap homemade stuff available from some of the homeboys downtown.  Real primo stuff, dey say! All I hear on de streets is 'Cheap");
     market_event(3, 60);
     say("!'\"");
     press_a();
@@ -720,13 +737,13 @@ static void ev_cheap(void) {
 static void ev_newspaper(void) {
     u8 d;
     page();
-    say("EXTRA! EXTRA! Dope prices soar after a big drug bust!!!");
+    sayc(1, "EXTRA! EXTRA! Dope prices soar after a big drug bust!!!");
     for (d = 0; d < NUM_DRUGS; d++) price[d] = (price[d] * (105 + rnd() % 25)) / 100;
     sfx(7); press_a();
 }
 static void ev_factory(void) {
     page();
-    say("\"Dude, I got some news for ya... a factory of one of de cities biggest suppliers of");
+    sayc(2, "\"Dude, I got some news for ya... a factory of one of de cities biggest suppliers of");
     market_event(1, 120);
     say(" "); say(rnd() % 2 == 1 ? "burned down" : "blew up");
     say(" last night.  I don't have to tell ya what this'll do on de street...\"");
@@ -735,29 +752,29 @@ static void ev_factory(void) {
 static void ev_brownies(void) {
     if (inv[5] == 0) return;
     page();
-    say("Ya come back to yer place tonight and find dat yer sexy main squeeze tought dat it wouldst be a good idea to use some of yer weed to make brownies!!!\nAll tings considered, yous take it pretty well.  After all, if ya were mad, you would've chopped up her body before dumping it in de river!");
+    sayc(1, "Ya come back to yer place tonight and find dat yer sexy main squeeze tought dat it wouldst be a good idea to use some of yer weed to make brownies!!!\nAll tings considered, yous take it pretty well.  After all, if ya were mad, you would've chopped up her body before dumping it in de river!");
     inv[5] = 0;
     press_a();
 }
 static void ev_mugger(void) {
     u8 scared = 0;
     page();
-    say("Yer walking along de street at night, when from outta nowhere jumps dis goon! He waves a 9mm Beretta at yous and demands yer fork over all yer money.\n");
+    sayc(2, "Yer walking along de street at night, when from outta nowhere jumps dis goon! He waves a 9mm Beretta at yous and demands yer fork over all yer money.\n");
     if (status >= 10 && rnd() % 20 != 0) {
-        say("Do ya wanna use yer status as a major drug dealer to get outta this?\n");
+        sayc(1, "Do ya wanna use yer status as a major drug dealer to get outta this?\n");
         if (yn()) {
             fill(1, 26, ' ', 30);
-            say("Yous tell him whos he's dealin' wit.  He looks nervous, asks fer yer pardon, den runs off down an alley!");
+            sayc(2, "Yous tell him whos he's dealin' wit.  He looks nervous, asks fer yer pardon, den runs off down an alley!");
             status -= 10; scared = 1;
         }
     }
     if (!scared) {
         fill(1, 26, ' ', 30);
         if (cash < 50) {
-            say("\"This is all you got? &%&*! this, man!\" He looks at ya like a crazed animal, and pulls de trigger!\n* * *  B L A M  * * *");
+            sayc(3, "\"This is all you got? &%&*! this, man!\" He looks at ya like a crazed animal, and pulls de trigger!\n* * *  B L A M  * * *");
             sfx(13);
             health -= rnd() % 6 + rnd() % 6 + 2;
-        } else say("He laughs merrily as he takes yer cash and runs off down de street!");
+        } else sayc(2, "He laughs merrily as he takes yer cash and runs off down de street!");
         cash = 0;
     }
     press_a();
@@ -779,13 +796,13 @@ static void ev_trenchcoat(void) {
     cost = ((i32)(rnd() % 200 + 1) * base);              /* 32-bit wrap like the original */
     cost = cost / 10000 * 100;
     page();
-    say("You are approached by a shady-lookin guy in a long dark trenchcoat.  He says:\n\"Hey, bud, I got a special trenchcoat for ya, just your style! It's got a capacity of ");
+    sayc(3, "You are approached by a shady-lookin guy in a long dark trenchcoat.  He says:\n\"Hey, bud, I got a special trenchcoat for ya, just your style! It's got a capacity of ");
     say_num(cap); say(" and I won't take under "); say_money(cost); say(" for it.\"\nIs it a deal?\n");
     if (yn()) {
         fill(1, 26, ' ', 30);
-        if (cash < cost) say("\"Sorry Charly, I don't take credit! Maybe when you're a little more solvent!\"");
-        else { say("\"You bought yourself one hell of a trenchcoat!\""); cash -= cost; hold = cap; }
-    } else { fill(1, 26, ' ', 30); say("\"OK, it's your loss, man.  What a shame!\""); }
+        if (cash < cost) sayc(3, "\"Sorry Charly, I don't take credit! Maybe when you're a little more solvent!\"");
+        else { sayc(3, "\"You bought yourself one hell of a trenchcoat!\""); cash -= cost; hold = cap; }
+    } else { fill(1, 26, ' ', 30); sayc(3, "\"OK, it's your loss, man.  What a shame!\""); }
     press_a();
 }
 static void ev_gun_smuggler(void) {
@@ -794,20 +811,20 @@ static void ev_gun_smuggler(void) {
     if (rnd() % 10 == 0) qty = rnd() % 6 + 5; else qty = rnd() % 5 + 2;
     each = kind * 200 + 200; total = qty * each;
     page();
-    say("Juan, one of the most powerful underground gun smugglers in the world, comes to you with an offer:\n\"I have a shipment of ");
+    sayc(2, "Juan, one of the most powerful underground gun smugglers in the world, comes to you with an offer:\n\"I have a shipment of ");
     say(gun_long[kind]); say("'s coming in tonight.  I'm distributing them in shipments of ");
     say_num(qty); say(" at "); say_money(each); say(" each, for a total of "); say_money(total);
     say(".\"\nAre you interested in an order?\n");
     if (yn()) {
         fill(1, 26, ' ', 30);
-        if (total > cash) say("\"I'm sorry, sir, but I only accept cash up-front.  Business is business.\"");
+        if (total > cash) sayc(0, "\"I'm sorry, sir, but I only accept cash up-front.  Business is business.\"");
         else {
-            say("\"Very well, they will be delivered by tomorrow.  Good doing business with you.\"");
+            sayc(0, "\"Very well, they will be delivered by tomorrow.  Good doing business with you.\"");
             if (gun_type == kind + 1) num_guns += qty; else num_guns = qty;
             gun_type = kind + 1;
             cash -= total;
         }
-    } else { fill(1, 26, ' ', 30); say("\"As you wish.  Perhaps next time we may do business.\""); }
+    } else { fill(1, 26, ' ', 30); sayc(0, "\"As you wish.  Perhaps next time we may do business.\""); }
     press_a();
 }
 static void ev_blackmail(void) {
@@ -815,15 +832,15 @@ static void ev_blackmail(void) {
     if (cash < 10000L) return;
     amount = (i32)(((u32)cash * (70 + rnd() % 30)) / 100UL / 1000UL) * 1000L;
     page();
-    say("Yous get a note in de mail from a business associate of yers.  He says dat if yous don't deposit ");
+    sayc(3, "Yous get a note in de mail from a business associate of yers.  He says dat if yous don't deposit ");
     say_money(amount); say(" in his Swiss bank account, he's gonna rat to de cops everything dat he knows about you.\nDo you pay the blackmail?\n");
     if (yn()) {
         fill(1, 26, ' ', 30);
-        say("You wire de money into his account.  That really ^$&?*@ sucks!!!");
+        sayc(2, "You wire de money into his account.  That really ^$&?*@ sucks!!!");
         cash -= amount;
     } else {
         fill(1, 26, ' ', 30);
-        say("Yeah, man, nobody pushes you around! I respect yer integrity!!!");
+        sayc(2, "Yeah, man, nobody pushes you around! I respect yer integrity!!!");
         if (rnd() % 5 != 0) { cop_flag = 1; done[0] = 0; }
     }
     press_a();
@@ -852,7 +869,7 @@ static void do_event(u8 ev) {
 static i16 pick_drug(const char* prompt) {
     i16 d;
     msg_area();
-    say(prompt); say(" (A = pick, B = cancel)");
+    ink = 2; say(prompt); say(" (A = pick, B = cancel)");
     d = choose(0, ROW_DRUGS, NUM_DRUGS, 0);
     msg_area();
     return d;
@@ -864,12 +881,12 @@ static u8 menu_buy(void) {
     if (d < 0) return 0;
     max_buy = cash / price[d];
     msg_area();
-    say("How many do ya wanna buy? ("); say_num(max_buy); say(" max.)  SELECT = most you can take");
+    sayc(2, "How many do ya wanna buy? ("); say_num(max_buy); say(" max.)  SELECT = most you can take");
     qty = pick_number(1, 26, 5, max_buy < space ? max_buy : space);
     msg_area();
     if (qty < 0) return 0;
-    if (qty > max_buy) { say("Hey man, if ya don't got enough cash, don't come 'round here!"); sfx(3); msg_wait(); return 0; }
-    if (qty > space) { say("Dude, you can't hold that much! Everyone's got a limit, right?"); sfx(3); msg_wait(); return 0; }
+    if (qty > max_buy) { sayc(2, "Hey man, if ya don't got enough cash, don't come 'round here!"); sfx(3); msg_wait(); return 0; }
+    if (qty > space) { sayc(2, "Dude, you can't hold that much! Everyone's got a limit, right?"); sfx(3); msg_wait(); return 0; }
     if (qty > 0) {
         inv[d] += (i16)qty;
         cash -= qty * price[d];
@@ -883,13 +900,13 @@ static u8 menu_sell(void) {
     i32 qty;
     d = pick_drug("What kinda drugs do ya want to unload?");
     if (d < 0) return 0;
-    if (inv[d] == 0) { say("Give me a break, man, you ain't got any of that!"); sfx(3); msg_wait(); return 0; }
+    if (inv[d] == 0) { sayc(2, "Give me a break, man, you ain't got any of that!"); sfx(3); msg_wait(); return 0; }
     msg_area();
-    say("How many do ya wanna sell? SELECT = all");
+    sayc(2, "How many do ya wanna sell? SELECT = all");
     qty = pick_number(1, 26, 5, inv[d]);
     msg_area();
     if (qty < 0) return 0;
-    if (qty > inv[d]) { say("I happen to know that you ain't that much on ya, so quit trying to burn me!"); sfx(3); msg_wait(); return 0; }
+    if (qty > inv[d]) { sayc(2, "I happen to know that you ain't that much on ya, so quit trying to burn me!"); sfx(3); msg_wait(); return 0; }
     if (qty > 0) {
         if (inv[d] - qty == 0) {
             i16 old = status;
@@ -907,7 +924,7 @@ static u8 menu_sell(void) {
 static u8 menu_jet(void) {
     i16 c, i;
     i32 fare;
-    msg_area(); say("Where ya wanna go?  (A = go, B = cancel)");
+    msg_area(); sayc(3, "Where ya wanna go?  (A = go, B = cancel)");
     for (i = 0; i < NUM_CITIES; i++) {
         at(2, ROW_DRUGS + i); ps_pad(city_name[i], 16);
         at(19, ROW_DRUGS + i);
@@ -916,12 +933,12 @@ static u8 menu_jet(void) {
     for (;;) {
         c = choose(0, ROW_DRUGS, NUM_CITIES, city);
         if (c < 0) { draw_status(); msg_area(); return 0; }
-        if (c == city) { msg_area(); say("Are you having flashbacks? That's where you are now!"); sfx(3); msg_wait(); msg_area(); say("Where ya wanna go?"); continue; }
+        if (c == city) { msg_area(); sayc(2, "Are you having flashbacks? That's where you are now!"); sfx(3); msg_wait(); msg_area(); sayc(3, "Where ya wanna go?"); continue; }
         break;
     }
     fare = travel_cost(c, city);
     if (fare > cash) {
-        msg_area(); say("Start flappin' yer arms, cause you ain't got de dough!"); sfx(3); msg_wait();
+        msg_area(); sayc(2, "Start flappin' yer arms, cause you ain't got de dough!"); sfx(3); msg_wait();
         draw_status(); return 0;
     }
     cash -= fare;
@@ -937,23 +954,23 @@ static u8 menu_bank(void) {
     i16 c;
     i32 amt;
     msg_area();
-    say("You arrive at the First World Bank of America.");
+    sayc(0, "You arrive at the First World Bank of America.");
     ps_at(3, 24, "Deposit some moola");
     ps_at(3, 25, "Withdraw some moola");
     ps_at(3, 26, "Leave");
     c = choose(1, 24, 3, 0);
     if (c < 0 || c == 2) { msg_area(); return 0; }
     msg_area();
-    say(c == 0 ? "How much 'ya gonna rathole?" : "How much 'ya gonna pull out?");
+    ink = 3; say(c == 0 ? "How much 'ya gonna rathole?" : "How much 'ya gonna pull out?");
     say(" SELECT = all");
     amt = pick_number(1, 26, 10, c == 0 ? cash : bank);
     msg_area();
     if (amt <= 0) return 0;
     if (c == 0) {
-        if (amt > cash) { say("You ain't got that much to deposit!"); sfx(3); msg_wait(); }
+        if (amt > cash) { sayc(2, "You ain't got that much to deposit!"); sfx(3); msg_wait(); }
         else { cash -= amt; bank += amt; sfx(2); draw_status(); }
     } else {
-        if (amt > bank) { say("You ain't got that much to pull out!"); sfx(3); msg_wait(); }
+        if (amt > bank) { sayc(2, "You ain't got that much to pull out!"); sfx(3); msg_wait(); }
         else { cash += amt; bank -= amt; sfx(2); draw_status(); }
     }
     return 0;                                            /* banking does not pass a day */
@@ -962,7 +979,7 @@ static u8 menu_loan(void) {
     i16 c;
     i32 amt;
     msg_area();
-    say("Ya set foot in the 'sharks office.  His boys are lookin' tough, but you don't pay dem no never-mind, cause Guido is talkin...");
+    sayc(3, "Ya set foot in the 'sharks office.  His boys are lookin' tough, but you don't pay dem no never-mind, cause Guido is talkin...");
     ps_at(3, 24, "Borrow some cash");
     ps_at(3, 25, "Pay me back");
     ps_at(3, 26, "Leave");
@@ -970,15 +987,15 @@ static u8 menu_loan(void) {
     if (c < 0 || c == 2) { msg_area(); return 0; }
     msg_area();
     if (c == 0) {                                        /* borrow */
-        if (angry == 1) { say("\"Man, yer pushin' yer luck luck! I ought'ta kill you just for askin'!!\""); sfx(3); msg_wait(); return 1; }
-        if (status <= 0) { say("\"Look, whoever you are, you're NOBODY to me.  Get outta here!\""); sfx(3); msg_wait(); return 1; }
-        if (debt == 0) say("\"My books show dat you don't owe me nut'in... would youse like to take out a little loan?\"\n");
-        say("How much ya wanna borrow?");
+        if (angry == 1) { sayc(2, "\"Man, yer pushin' yer luck luck! I ought'ta kill you just for askin'!!\""); sfx(3); msg_wait(); return 1; }
+        if (status <= 0) { sayc(3, "\"Look, whoever you are, you're NOBODY to me.  Get outta here!\""); sfx(3); msg_wait(); return 1; }
+        if (debt == 0) sayc(3, "\"My books show dat you don't owe me nut'in... would youse like to take out a little loan?\"\n");
+        sayc(3, "How much ya wanna borrow?");
         amt = pick_number(1, 26, 10, -1);
         msg_area();
         if (amt <= 0) return 0;
-        if (amt < 1000) { say("\"Sorry, bud, but I got a $1000 minimum.  Got no time for penny-ante stuff!\""); sfx(3); msg_wait(); return 0; }
-        if (amt / 10000 >= status) { say("\"No deal, too big a risk for me! I'm a businessman, ya'know!\""); sfx(3); msg_wait(); return 0; }
+        if (amt < 1000) { sayc(2, "\"Sorry, bud, but I got a $1000 minimum.  Got no time for penny-ante stuff!\""); sfx(3); msg_wait(); return 0; }
+        if (amt / 10000 >= status) { sayc(2, "\"No deal, too big a risk for me! I'm a businessman, ya'know!\""); sfx(3); msg_wait(); return 0; }
         {
             i16 days = loan_term(status, debt + amt);
             u8 refuse = 0;
@@ -986,30 +1003,30 @@ static u8 menu_loan(void) {
             else if (days < loan_days) refuse = 0;
             else if (loan_flag == 1) refuse = 1;
             if (refuse) {
-                say("\"Look, you already owe me $"); say_num(debt);
+                sayc(3, "\"Look, you already owe me $"); say_num(debt);
                 say(" bucks, I'm not givin ya THAT much more!!! Christ, what do I look like, Santi-Claus?\"");
                 sfx(3); msg_wait(); return 0;
             }
             debt += amt; cash += amt; loan_flag = 1; loan_days = days;
-            say("\"Alright, I'll loan ya de money, but if you welch, my boys will come lookin for ya! I expect to see you here to pay me in full in ");
+            sayc(2, "\"Alright, I'll loan ya de money, but if you welch, my boys will come lookin for ya! I expect to see you here to pay me in full in ");
             say_num(days - 1); say(" days.\"");
             sfx(4); msg_wait();
             return 1;
         }
     }
-    if (debt == 0) { say("\"My books show dat you don't owe me nut'in...\""); msg_wait(); return 0; }
-    say("How much ya wanna pay back? SELECT = all you owe");
+    if (debt == 0) { sayc(3, "\"My books show dat you don't owe me nut'in...\""); msg_wait(); return 0; }
+    sayc(3, "How much ya wanna pay back? SELECT = all you owe");
     amt = pick_number(1, 26, 10, debt < cash ? debt : cash);
     msg_area();
     if (amt <= 0) return 0;
-    if (amt > cash) { say("'fraid you don't got that in cash, my man."); sfx(3); msg_wait(); return 0; }
+    if (amt > cash) { sayc(2, "'fraid you don't got that in cash, my man."); sfx(3); msg_wait(); return 0; }
     if (amt >= debt) debt = 0; else debt -= amt;
     cash -= amt;
     if (debt > 0) {
-        say("\"OK, but you still owe me $"); say_num(debt); say(" bucks!\"");
+        sayc(3, "\"OK, but you still owe me $"); say_num(debt); say(" bucks!\"");
     } else {
         loan_days = 0; loan_flag = 0; angry = 0; thugs = 0;
-        say("\"Paid in full? Lucky for you, eh boys? Anytime yous need a loan, just come to me, I'll take care of ya...\"");
+        sayc(3, "\"Paid in full? Lucky for you, eh boys? Anytime yous need a loan, just come to me, I'll take care of ya...\"");
     }
     sfx(4); msg_wait();
     return 1;
@@ -1019,21 +1036,21 @@ static u8 menu_hospital(void) {
     i16 stay, n;
     msg_area();
     if (health == 100) {
-        say("Ya have de doc check yous out, but aside from yer bunions on yer feet, youse is fit as a fiddle!");
+        sayc(0, "Ya have de doc check yous out, but aside from yer bunions on yer feet, youse is fit as a fiddle!");
         msg_wait(); return 0;
     }
     cost = (100 - health) * 10L;
-    say("You drag yer sorry butt into de loc'l Hospital.  The docs check ye out, and come to the conclusion that it'll cost ");
+    sayc(0, "You drag yer sorry butt into de loc'l Hospital.  The docs check ye out, and come to the conclusion that it'll cost ");
     say_num(cost); say(" dollars to fix ya up.\nDo ya sign the consent forms?\n");
     if (yn()) {
         msg_area();
-        if (cost > cash) { say("You don't have enough dinero up front to foot de bill!"); sfx(3); msg_wait(); }
+        if (cost > cash) { sayc(2, "You don't have enough dinero up front to foot de bill!"); sfx(3); msg_wait(); }
         else {
             cash -= cost;
             stay = (i16)(cost / 15);
             for (n = 1; stay > n; n++) next_day();
             health = 100;
-            say("OK, yer laid up for "); say_num(stay); say(" days recoup'ratin', and yous feel good as new!");
+            sayc(1, "OK, yer laid up for "); say_num(stay); say(" days recoup'ratin', and yous feel good as new!");
             sfx(2); msg_wait();
         }
     }
@@ -1041,7 +1058,7 @@ static u8 menu_hospital(void) {
 }
 static u8 menu_quit(void) {
     msg_area();
-    say("Are ya sure ya wanna chicken out an' QUIT?\n");
+    sayc(0, "Are ya sure ya wanna chicken out an' QUIT?\n");
     if (yn()) { playing = 0; return 1; }
     msg_area();
     return 0;
@@ -1083,8 +1100,8 @@ static void show_death(void) {
 
 static u32 score_days_at(u16 idx) {
     u32 v = SCORE_DAYS_START;
-    u16 i;
-    for (i = 0; i < idx; i++) v -= score_days_d[i];
+    u16 i, d = SCORE_DAYS_D0;
+    for (i = 0; i < idx; i++) { v -= d; d += score_days_s[i]; }
     return v;
 }
 
@@ -1101,7 +1118,8 @@ static u32 score_calc(i32 total, i16 pct) {
     }
     {
         i16 q = pct < 0 ? 0 : (pct > 100 ? 100 : pct);
-        p3 = score_deals[q];
+        p3 = 0;
+        for (i = SCORE_DEALS_Z; i < q; i++) p3 += score_deals_d[i - SCORE_DEALS_Z];
     }
     p4 = (u32)((i32)gun_type * num_guns) * 1500UL;
     return p1 + p2 + p3 + p4;
@@ -1133,7 +1151,7 @@ static void show_win(void) {
     for (f = 1; f < 31; f++) put(f, 17, '-');
     ps_at(1, 18, "OVERALL SCORE:"); at(16, 18); pn((i32)score);
     ps_at(1, 19, "RANK:"); at(16, 19); ps(rank_name[rk]);
-    colour_rows(0, 1, 1); colour_rows(18, 19, 3);
+    pal3(0x2A, 0x1A); colour_rows(0, 1, 1); colour_rows(18, 19, 3);
     sfx(4);
     press_a();
 }
@@ -1156,7 +1174,7 @@ static void exit_screen(void) {
     say("This game is intended simply as a diversion from everyday life. In no way am I condoning or encouraging drug dealing or drug use in any way, shape, or form.\n\nTo quote from an excellent anti-drug movie, New Jack City:\n\n\"The drug epidemic isn't a black thing, it isn't a white thing. It's a death thing. And death doesn't care what color you are.\"");
     colour_cols(4, 5, 4, 13, 2);                         /* only the heading is red, the frame stays white */
     ps_at(1, 25, "Thank you for playing DrugLord.");
-    colour_rows(24, 25, 3);
+    pal3(0x2A, 0x1A); colour_rows(24, 25, 3);
     ppu_show();
     while (!(wait_btn() & BTN_A)) {}
 }
@@ -1165,17 +1183,17 @@ static void exit_screen(void) {
 static void thugs_scene(void) {
     u8 n;
     page();
-    say("You're ambushed in a dark alley by Guido's thugs, must be 'bout ten guys! The boss-man say \"Oh, man, you should'na missed de deadline, now me and boys are gonna have to break your legs! Maybe next time you'll learn, eh?\"\nDey take yous from all directions, you ain't gotta chance...\nOne steps out with a baseball bat and...\n");
+    sayc(2, "You're ambushed in a dark alley by Guido's thugs, must be 'bout ten guys! The boss-man say \"Oh, man, you should'na missed de deadline, now me and boys are gonna have to break your legs! Maybe next time you'll learn, eh?\"\nDey take yous from all directions, you ain't gotta chance...\nOne steps out with a baseball bat and...\n");
     delay(120);
     thugs++;
     for (n = 0; n < thugs; n++) {
-        say("* * * C R A C K ! ! * * *\n");
+        sayc(2, "* * * C R A C K ! ! * * *\n");
         health -= 25; angry = 1;
         sfx(3);
         delay(60);
     }
     if (health > 0) {
-        say("\"Oh, one more 'ting... you got a week to come up with dinero, or we'll be back, comprende?\"");
+        sayc(2, "\"Oh, one more 'ting... you got a week to come up with dinero, or we'll be back, comprende?\"");
         loan_days = 7;
     } else dead = 1;
     press_a();
@@ -1199,13 +1217,14 @@ static void game(void) {
             draw_status();
             if (status >= WIN_STATUS) break;
             msg_area();
-            ps_at(2, 21, "Buy drugs");
+            ink = 3; ps_at(2, 21, "Buy drugs");
             ps_at(2, 22, "Sell drugs");
             ps_at(2, 23, "Jet to another city");
             ps_at(2, 24, "Visit de Bank");
             ps_at(2, 25, "See de Loan Shark");
             ps_at(2, 26, "Go to de Hospital");
             ps_at(2, 27, "Quit de game");
+            ink = 0;
             sel = choose(0, 21, 7, 0);
 #ifdef DEBUG
             if (sel == -2) { debug_menu(); draw_main(); continue; }
@@ -1254,7 +1273,7 @@ static void credits_screen(void) {
     ps_at(7, 10, "Copyright 1991-93");
     ps_at(8, 12, "FantasyWare Inc.");
     ps_at(6, 15, "NES port by justz00t");
-    colour_rows(8, 13, 1); colour_rows(14, 15, 3);
+    pal3(0x2A, 0x1A); colour_rows(8, 13, 1); colour_rows(14, 15, 3);
     ppu_show();
     for (n = 0; n < 240; n++) wait_vblank();
 }
@@ -1304,20 +1323,18 @@ static void title_wait(void) {
 /* ======================================================================== */
 static const char* const snd_name[] = {
     "Beep", "Denied", "Deal", "Siren", "News", "EXTRA!", "Hit",
-    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5",
-    "Menu click", "Title music", "Back"};
-static const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 20};
-#define SND_COUNT 15
+    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5", "Music"};
+static const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15};
+#define SND_COUNT 13
 static void sound_test(void) {
     u8 i;
     i16 s = 0;
     for (;;) {
         page();
-        ps_at(7, 1, "SOUND TEST");
         for (i = 0; i < SND_COUNT; i++) ps_at(2, 4 + i, snd_name[i]);
         s = choose(0, 4, SND_COUNT, s);
-        if (s < 0 || s == SND_COUNT - 1) return;
-        if (s == SND_COUNT - 2) {                        /* title music until B */
+        if (s < 0) return;
+        if (s == SND_COUNT - 1) {                        /* title music until B */
             music_start();
             ppu_show();
             while (!(vsync_pad() & BTN_B)) {}
@@ -1329,21 +1346,20 @@ static void sound_test(void) {
 static void dbg_wait_release(void) { while (pad_old & (BTN_SELECT | BTN_START)) vsync_pad(); }
 
 static const char* const dbg_name[] = {
-    "Cop fight", "Cops sell", "Cheap", "Bust", "Factory",
-    "Brownies", "Mugger 1", "Mugger 2", "Mugger 3", "Trenchcoat",
-    "Smuggler", "Blackmail", "Thugs", "Death", "Win score",
-    "Play again", "Notice", "Credits", "Title", "SOUND TEST", "Back"};
-#define DBG_COUNT 21
+    "Cop fight", "Cops", "Cheap", "Bust", "Factory",
+    "Brownies", "Mug 1", "Mug 2", "Mug 3", "Coat",
+    "Guns", "Blackmail", "Thugs", "Death", "Win",
+    "Replay", "Notice", "Credit", "Title", "Sounds"};
+#define DBG_COUNT 20
 static void debug_menu(void) {
     u8 i;
     i16 s = 0;
     dbg_wait_release();
     for (;;) {
         page();
-        ps_at(6, 1, "DEBUG MENU");
         for (i = 0; i < DBG_COUNT; i++) ps_at(2, 3 + i, dbg_name[i]);
         s = choose(0, 3, DBG_COUNT, s);
-        if (s < 0 || s == DBG_COUNT - 1) { dbg_wait_release(); return; }
+        if (s < 0) { dbg_wait_release(); return; }
         mkt_today = 0; dead = 0;
         if (status < 120) status = 120;                  /* so every option of every event is available */
         if (cash < 20000L) cash = 20000L;

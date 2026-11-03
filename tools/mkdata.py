@@ -132,9 +132,17 @@ with open(os.path.join(out, 'tables.h'), 'w') as o:
     dl = [sd[i-1]-sd[i] for i in range(1, len(sd))]
     assert all(0 <= d < 65536 for d in dl), 'delta range'
     o.write('#define SCORE_DAYS_START %dUL\n' % sd[0])
-    o.write('static const unsigned short score_days_d[%d] = {%s};\n' % (len(dl), ','.join(str(d) for d in dl)))
+    s2 = [dl[i+1]-dl[i] for i in range(len(dl)-1)] + [0]
+    assert all(-128 <= x < 128 for x in s2), 'second diff range'
+    o.write('#define SCORE_DAYS_D0 %d\n' % dl[0])
+    o.write('static const signed char score_days_s[%d] = {%s};\n' % (len(s2), ','.join(str(d) for d in s2)))
     # score part 3: pct^8.14 * 2.48e-11, capped at 500000 (index = percent of good deals)
     p3 = [min(500000, int(math.pow(d, 8.14)*2.48e-11)) for d in range(0, 101)]
-    o.write('static const unsigned long score_deals[101] = {%s};\n' % ','.join('%dUL' % v for v in p3))
+    dd = [p3[i]-p3[i-1] for i in range(1, 101)]
+    assert all(0 <= d < 65536 for d in dd), 'deal delta range'
+    z = 0
+    while dd[z] == 0: z += 1
+    o.write('#define SCORE_DEALS_Z %d\n' % z)
+    o.write('static const unsigned short score_deals_d[%d] = {%s};\n' % (100 - z, ','.join(str(d) for d in dd[z:])))
     # score part 1: floor(2^(total/10e6)) for total >= 10e6*log2(k): thresholds for k = 2..10
     o.write('static const unsigned long score_wealth[9] = {%s};\n' % ','.join('%dUL' % math.ceil(1e7*math.log2(k)) for k in range(2, 11)))

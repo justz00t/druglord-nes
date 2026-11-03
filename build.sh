@@ -3,5 +3,5 @@
 set -e
 cd "$(dirname "$0")"
 python3 -I tools/mkdata.py
-cl65 -t nes -Oi -o druglord.nes druglord.c chr.s
+cl65 -t nes -C nes.cfg -Os -o druglord.nes druglord.c chr.s
 ls -l druglord.nes

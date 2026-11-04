@@ -1,7 +1,7 @@
 # DRUGLORD for the NES
 
 A separate, playable port of DRUGLORD (Phil Erwin, 1991-93) to the NES, written in C for cc65.
-It is **not** part of the byte-matched `c/` folder, which is never touched.
+It is **not** part of the byte-matched C source in https://github.com/justz00t/druglord, which is never touched.
 
 `druglord.nes` is the ready-to-run ROM (mapper 2 / UxROM, 64 KB PRG, CHR-RAM, 8 KB battery-backed WRAM). Any NES emulator will run it.
 
@@ -28,7 +28,7 @@ price events, brownies), the status/rank system, the final score and the NOTICE 
 
 On start-up a credits screen (4 seconds) is followed by the title screen. The title music is the piano riff of `tools/title.mid` (pulse 1, pulse 2 and triangle, 16 bars, looped). There is no music during the game, only sound effects. Quitting shows the NOTICE screen; A returns to the title screen.
 
-The rules, odds and formulas are the DOS original's (see "GAME RULES AND FORMULAS" in `c/DRUGLORD.C`), including its
+The rules, odds and formulas are the DOS original's (see "GAME RULES AND FORMULAS" in `c/DRUGLORD.C` of https://github.com/justz00t/druglord), including its
 random number generator.  The NES has no floating point, so the formulas are redone with integers in a way that gives
 the same numbers (price multipliers, air fares, loan terms, interest, the coat prices and the score tables).
 Original quirks are kept, e.g. banking does not pass a day and events only happen once per city.

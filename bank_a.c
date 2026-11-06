@@ -384,19 +384,42 @@ u8 menu_sell(void) {
     }
     return 1;
 }
+/* a rough map of the USA for the jet menu (rows 21-27); the cities sit at their city_x/city_y grid spots */
+static const char* const usa_map[7] = {
+    "  ..............-....\\         ",
+    " |                    \\______  ",
+    " |                           \\ ",
+    "  \\                         |  ",
+    "   |                     __.'   ",
+    "   '-._____   ______.--'  |     ",
+    "           '-'              \\.  "};
+static const char* const city_code[NUM_CITIES] = {"CHI", "DET", "LVS", "LA", "MIA", "NYC", "SD", "DC"};
+static void draw_map(void) {
+    u8 i, x, y;
+    ink = 3;
+    for (i = 0; i < 7; i++) ps_at(0, 21 + i, usa_map[i]);
+    for (i = 0; i < NUM_CITIES; i++) {
+        x = 3 + city_x[i] * 5; y = 20 + city_y[i] * 2 - 1;
+        if (i == 6 || i == 7) y++;                       /* San Diego sits under Los Angeles, D.C. under New York */
+        ink = i == city ? 1 : 0;
+        ps_at(x, y, city_code[i]);
+    }
+    ink = 0;
+}
 u8 menu_jet(void) {
     i16 c, i;
     i32 fare;
-    msg_area(); sayc(3, "Where ya wanna go?  (A = go, B = cancel)");
+    msg_area(); draw_map();
+    ink = 3; ps_at(1, 20, "Where ya wanna go?"); ink = 0;
     for (i = 0; i < NUM_CITIES; i++) {
         at(2, ROW_DRUGS + i); ps_pad(city_name[i], 16);
         at(19, ROW_DRUGS + i);
-        if (i == city) ps("here"); else { pc('$'); pn_r(travel_cost(i, city), 5); }
+        if (i == city) ps("here "); else { pc('$'); pn_r(travel_cost(i, city), 5); }
     }
     for (;;) {
         c = choose(0, ROW_DRUGS, NUM_CITIES, city);
         if (c < 0) { draw_status(); msg_area(); return 0; }
-        if (c == city) { msg_area(); sayc(2, "Are you having flashbacks? That's where you are now!"); sfx(3); msg_wait(); msg_area(); sayc(3, "Where ya wanna go?"); continue; }
+        if (c == city) { msg_area(); sayc(2, "Are you having flashbacks? That's where you are now!"); sfx(3); msg_wait(); msg_area(); draw_map(); ink = 3; ps_at(1, 20, "Where ya wanna go?"); ink = 0; continue; }
         break;
     }
     fare = travel_cost(c, city);
@@ -409,7 +432,7 @@ u8 menu_jet(void) {
     mkt_today = 0;
     gen_prices();
     for (i = 0; i < 10; i++) done[i] = 0;
-    sfx(6);
+    sfx(9); sfx(10);
     draw_status();
     return 1;
 }
@@ -537,7 +560,7 @@ void thugs_scene(void) {
     for (n = 0; n < thugs; n++) {
         sayc(2, "* * * C R A C K ! ! * * *\n");
         health -= 25; angry = 1;
-        sfx(3);
+        sfx(17);
         delay(60);
     }
     if (health > 0) {

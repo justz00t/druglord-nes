@@ -2,6 +2,7 @@
 #include "dl.h"
 #define TBL_SCORE
 #include "tables.h"
+#include "title.h"
 
 void init_game(void) {
     u8 i;
@@ -26,14 +27,18 @@ static void box(u8 x, u8 y, u8 w, u8 h) {
     for (i = 1; i + 1 < h; i++) { at(x, y + i); pc(4); at(x + w - 1, y + i); pc(4); }
     at(x, y + h - 1); pc(5); for (i = 2; i < w; i++) pc(2); pc(6);
 }
+/* the DOS death screen: a framed message with a few words picked out in colour */
 void show_death(void) {
     page();
-    delay(60);
-    ink = 2; box(5, 7, 22, 9);
-    ink = 1; ps_at(10, 9, "R . I . P .");
-    ink = 0; ps_at(9, 12, "You are dead.");
-    sfx(3);
-    delay(200);
+    delay(90);
+    sfx(16);
+    pal3(0x2A, 0x1A);
+    ink = 2; box(1, 2, 30, 24);
+    wx0 = 3; wx1 = 28; wy0 = 4; wy1 = 22; cx = 3; cy = 4;
+    sayc(1, "Everything has a strange misty look to it...\n\n");
+    sayc(0, "You are standing next to your dead body.  As you decide what to do next, you start to feel heat under your feet.  The next thing you know, you see flames licking all around your body.\n\n");
+    sayc(0, "I guess this is "); sayc(3, "the end."); ink = 0;
+    delay(240);
     press_a();
 }
 
@@ -131,21 +136,43 @@ void credits_screen(void) {
     ps_at(5, 8, "Written by Phil Erwin");
     ps_at(7, 10, "Copyright 1991-93");
     ps_at(8, 12, "FantasyWare Inc.");
-    ps_at(6, 15, "NES port by justz00t");
-    pal3(0x2A, 0x1A); colour_rows(8, 13, 1); colour_rows(14, 15, 3);
+    ps_at(6, 16, "NES port by justz00t");
+    pal3(0x2A, 0x1A); colour_rows(8, 13, 1); colour_rows(16, 17, 3);
     ppu_show();
     for (n = 0; n < 240; n++) wait_vblank();
 }
 
+/* the title screen: the DOS logo (pattern table 1) with its colours flowing across it, the text in the DOS colours */
+static const u8 hues[8] = {0x16, 0x17, 0x28, 0x2A, 0x2C, 0x12, 0x14, 0x15};
 void title_screen(void) {
-    clear_screen(); set_palette();
-    ps_at(2, 9,  "\x01\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x03");
-    ps_at(2, 10, "\x04                          \x04");
-    ps_at(2, 11, "\x04     D R U G L O R D      \x04");
-    ps_at(2, 12, "\x04                          \x04");
-    ps_at(2, 13, "\x05\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x06");
-    ps_at(START_X, START_Y, "PRESS START");
-    colour_rows(8, 13, 2);
+    u8 x, y;
+    const u8* m = logo_map;
+    clear_screen();
+    set_palette();
+    ppu_off();
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01;
+    PPUDATA = 0x28; PPUDATA = 0x2A; PPUDATA = 0x16;          /* palette 0: yellow, green, red text */
+    for (x = 1; x < 4; x++) { PPUADDR = 0x3F; PPUADDR = x * 4 + 2; PPUDATA = 0x00; }   /* logo shadow: dark grey */
+    bgctl = 0x10;
+    for (y = 0; y < LOGO_H; y++) { ppu_at(0, 4 + y); for (x = 0; x < LOGO_W; x++) PPUDATA = *m++; }
+    for (x = 0; x < 16; x++) colour_cols(4, 9, x, x, 1 + x % 3);
+    ps_at(9, 12, T_VERSION);
+    ps_at(6, START_Y, T_ARROW_R); ps_at(START_X, START_Y, "PRESS START"); ps_at(22, START_Y, T_ARROW_L);
+    ps_at(5, 19, T_WRITTEN);
+    ps_at(7, 21, T_COPY1); ps_at(8, 22, T_COPY2);
+    ps_at(6, 25, T_PORT);
+}
+/* the logo colours: palettes 1-3 get neighbouring hues, moved along one step at a time (call after wait_vblank) */
+static void logo_colours(u8 k) {
+    u8 i;
+    latch = PPUSTATUS;
+    for (i = 0; i < 3; i++) {
+        u8 h = hues[(k + i) & 7];
+        PPUADDR = 0x3F; PPUADDR = 5 + i * 4; PPUDATA = h;
+        PPUADDR = 0x3F; PPUADDR = 7 + i * 4; PPUDATA = h + 0x10;
+    }
+    PPUADDR = 0x3F; PPUADDR = 0x00; PPUADDR = 0; PPUADDR = 0;
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 /* draw or erase "PRESS START" during vblank, without ever blanking the screen (no flicker) */
 void start_text(u8 on) {
@@ -154,18 +181,18 @@ void start_text(u8 on) {
     wait_vblank();
     ppu_at(START_X, START_Y);
     for (i = 0; i < 11; i++) PPUDATA = on ? (u8)s[i] : ' ';
-    PPUCTRL = 0; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 
 /* the title screen with its music; returns when START (or A) is pressed */
 void title_wait(void) {
-    u8 e, blink = 0;
+    u8 e, blink = 0, k = 0;
     music_start();
     title_screen();
     ppu_show();
     for (;;) {
         if ((blink & 31) == 0) start_text(!(blink & 32));
-        else wait_vblank();
+        else { wait_vblank(); if ((blink & 7) == 4) logo_colours(k++); }
         frames++; blink++;
         music_update();
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
@@ -179,9 +206,9 @@ void title_wait(void) {
 /*  Debug build only: SELECT+START in the main menu opens this menu         */
 /* ======================================================================== */
 const char* const snd_name[] = {
-    "Beep", "Denied", "Deal", "Siren", "News", "EXTRA!", "Hit",
-    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5", "Music"};
-const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15};
+    "Beep", "Denied", "Deal", "Siren", "News", "EXTRA!", "Hit", "Jet", "Take-off",
+    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5", "Death", "Punch", "Tick", "Music"};
+const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20};
 void sound_test(void) {
     u8 i;
     i16 s = 0;

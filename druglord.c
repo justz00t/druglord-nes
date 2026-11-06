@@ -11,6 +11,7 @@ u8 cx, cy;               /* text cursor */
 u8 wx0 = 1, wx1 = 30;    /* word-wrap window (columns) */
 u8 wy0 = 1, wy1 = 27;    /* rows used by wrapped text */
 
+u8 bgctl;                /* PPUCTRL value: bit 4 picks pattern table 1 (the title screen tiles) */
 u8 ink, attr_dirty;      /* current text colour (palette 0..3); pc() colours its 2x2-tile attribute block with it */
 u8 attr[64];
 u8 pend;
@@ -21,7 +22,7 @@ void ppu_show(void) {
     if (!ppu_on) {
         if (attr_dirty) { u8 i; attr_dirty = 0; latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0; for (i = 0; i < 64; i++) PPUDATA = attr[i]; }
         wait_vblank();
-        PPUCTRL = 0; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
+        PPUCTRL = bgctl; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
         PPUMASK = 0x0A; ppu_on = 1;
     }
 }
@@ -35,7 +36,7 @@ void put2(u8 x1, u8 y1, u8 c1, u8 x2, u8 y2, u8 c2) {
     if (ppu_on) wait_vblank();
     ppu_at(x1, y1); PPUDATA = c1;
     ppu_at(x2, y2); PPUDATA = c2;
-    if (ppu_on) { PPUCTRL = 0; PPUSCROLL = 0; PPUSCROLL = 0; }
+    if (ppu_on) { PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0; }
 }
 void fill(u8 x, u8 y, u8 ch, u8 n) {
     ppu_off(); ppu_at(x, y);
@@ -58,7 +59,7 @@ void clear_screen(void) {
     ppu_off(); ppu_at(0, 0);
     for (i = 0; i < 1024; i++) PPUDATA = 0;
     for (i = 0; i < 64; i++) attr[i] = 0;
-    ink = 0; attr_dirty = 0;
+    ink = 0; attr_dirty = 0; bgctl = 0;
     pal3(0x2C, 0x1C);                                    /* cyan, unless a screen asks for green */
     cx = 1; cy = 1;
 }
@@ -100,7 +101,8 @@ void ltoa_s(i32 v) {         /* decimal into nb */
     u32 u;
     if (v < 0) { nb[i++] = '-'; u = (u32)(-v); } else u = (u32)v;
     if (u == 0) t[n++] = '0';
-    while (u) { t[n++] = '0' + (u % 10); u /= 10; }
+    while (u >= 65536UL) { t[n++] = '0' + (u8)(u % 10); u /= 10; }        /* 32-bit division is slow on the 6502: */
+    { u16 w = (u16)u; while (w) { t[n++] = '0' + (u8)(w % 10); w /= 10; } }  /* finish with 16-bit arithmetic */
     while (n) nb[i++] = t[--n];
     nb[i] = 0;
 }
@@ -130,6 +132,7 @@ void ps_pad(const char* s, u8 w) {
 /* ======================================================================== */
 u8 pad_old;
 u16 frames;
+extern u8 music_on;
 u8 read_pad(void) {
     u8 i, v = 0;
     JOY1 = 1; JOY1 = 0;
@@ -148,39 +151,106 @@ void delay(u8 n) {           /* n frames; holding A skips the wait */
     ppu_show();
     while (n--) { vsync_pad(); if (pad_old & BTN_A) break; }
 }
+u8 pend_btn;                 /* a button pressed while a short sound effect played: handed to the next wait_btn() */
 u8 wait_btn(void) {          /* wait for any new button, return it */
     u8 e;
     ppu_show();
+    if (pend_btn) { e = pend_btn; pend_btn = 0; return e; }
     for (;;) { e = vsync_pad(); if (e) return e; }
 }
 
-/* ---- sound effects (pulse 2 + noise, played while waiting) ---- */
-void snd(u16 per, u8 n) {
-    APU(0x04) = 0xBC; APU(0x06) = per & 255; APU(0x07) = 0x08 | (per >> 8);
-    ppu_show();
-    while (n--) { wait_vblank(); music_update(); }
-    APU(0x04) = 0xB0;
+/* ---- sound effects: pulse 2, noise and (when no music plays) pulse 1, stepped once a frame while
+ *      the game waits.  A press of A cuts a long effect short. ---- */
+static u8 p1hi, p2hi;                /* last high period byte written: a $4003/$4007 write restarts the wave (a click), so it is only written when it changes */
+void p2(u16 per) { APU(0x06) = per & 255; if ((per >> 8) != p2hi) { p2hi = per >> 8; APU(0x07) = 0x08 | p2hi; } }
+void p1(u16 per) { APU(0x02) = per & 255; if ((per >> 8) != p1hi) { p1hi = per >> 8; APU(0x03) = 0x08 | p1hi; } }
+static u8 skip, sfx_t;
+/* one frame of an effect.  A pressed after the first 8 frames cuts the effect short (and is used up by that);
+ * a button pressed earlier is kept for the next wait_btn(), so a quick press is never lost to a click. */
+static u8 tick(void) {
+    u8 e = vsync_pad();
+    sfx_t++;
+    if (e) { if ((e & BTN_A) && sfx_t > 8) { skip = 1; pend_btn = 0; } else pend_btn |= e; }
+    return skip;
 }
+static void sfx_off(void) { APU(0x04) = 0x30; APU(0x0C) = 0x30; if (!music_on) APU(0x00) = 0x30; p1hi = p2hi = 0xFF; }
+/* a steady tone on pulse 2: dv = duty | 0x30 | volume, n frames */
+void tone(u16 per, u8 dv, u8 n) { APU(0x04) = dv; p2(per); while (n--) if (tick()) break; }
+void snd(u16 per, u8 n) { ppu_show(); skip = 0; sfx_t = 0; p2hi = 0xFF; tone(per, 0xBC, n); APU(0x04) = 0x30; }
+/* a noise burst that fades: idx = period index 0 (hiss) .. 15 (rumble), from volume vol over n frames */
 void noi(u8 idx, u8 vol, u8 n) {
-    APU(0x0C) = 0x30 | vol; APU(0x0E) = idx; APU(0x0F) = 0x08;
-    ppu_show();
-    while (n--) { wait_vblank(); music_update(); if (vol) APU(0x0C) = 0x30 | --vol; }
+    u8 i;
+    APU(0x0E) = idx; APU(0x0F) = 0x08;
+    for (i = 0; i < n; i++) { APU(0x0C) = 0x30 | (u8)((u16)vol * (n - i) / n); if (tick()) break; }
     APU(0x0C) = 0x30;
+}
+/* a pulse-2 note that decays (a pluck), 12.5% duty */
+static void pluck(u16 per, u8 n) {
+    u8 v = 15;
+    p2(per);
+    while (n--) { APU(0x04) = 0x30 | v; if (v > 1) v--; if (tick()) break; }
+    APU(0x04) = 0x30;
+}
+/* a pulse-2 slide from one period to another over n frames (the period changes linearly) */
+static void slide(u16 from, u16 to, u8 dv, u8 n) {
+    u8 i;
+    APU(0x04) = dv;
+    for (i = 0; i < n; i++) { p2(from + (i32)((i32)to - from) * i / n); if (tick()) break; }
+}
+/* one gunshot: a crack (short bright noise) over a boom (noise rumble plus a low pulse thump) */
+static void bang(u8 crack, u8 boom, u8 thump) {
+    u8 i, v;
+    APU(0x0F) = 0x08;
+    if (thump) { APU(0x04) = 0xBF; p2(HZ(140)); }
+    for (i = 0; i < boom; i++) {
+        v = (u8)(15 - (u16)15 * i / boom);
+        APU(0x0E) = i < crack ? 4 : 10;
+        APU(0x0C) = 0x30 | v;
+        if (thump) { if (i < 10) p2(HZ(140) + i * 20); else APU(0x04) = 0x30; }
+        if (tick()) break;
+    }
+    APU(0x0C) = 0x30; APU(0x04) = 0x30;
+}
+/* a police siren: one slow wail (500 -> 1300 Hz and back, eased) then four fast yelps, on both pulses
+ * (pulse 1 a touch sharp so the two beat against each other) */
+static const u8 siren_t[48] = {224,223,223,222,220,218,215,213,209,206,202,198,193,189,184,179,175,170,165,160,155,150,146,141,137,132,128,124,120,117,113,110,107,105,102,100,97,95,94,92,91,89,88,88,87,86,86,86};
+static u8 siren_step(u8 i) { p2(siren_t[i]); if (!music_on) p1(siren_t[i] + 3); return tick(); }
+static void siren(void) {
+    u8 i, c;
+    APU(0x04) = 0xBB; if (!music_on) APU(0x00) = 0xB7;
+    for (i = 0; i < 48; i++) if (siren_step(i)) goto out;
+    for (i = 48; i--; ) if (siren_step(i)) goto out;
+    for (c = 0; c < 4; c++) {
+        for (i = 0; i < 48; i += 4) if (siren_step(i)) goto out;
+        for (i = 48; i >= 4; i -= 4) if (siren_step(i - 4)) goto out;
+    }
+out:;
 }
 void sfx(u8 n) {
     u8 i;
+    ppu_show();
+    skip = 0; sfx_t = 0; p1hi = p2hi = 0xFF;
     switch (n) {
-    case 2: snd(HZ(1000), 4); break;                                    /* beep */
-    case 3: snd(HZ(400), 6); snd(HZ(200), 10); break;                   /* denied */
-    case 4: snd(HZ(500), 3); snd(HZ(750), 3); snd(HZ(1000), 4); break;  /* deal */
-    case 5: for (i = 0; i < 4; i++) { snd(HZ(900), 8); snd(HZ(600), 8); } break;   /* siren */
-    case 6: for (i = 0; i < 10; i++) snd(HZ(400 + i * 120), 2); break;  /* news */
-    case 7: for (i = 0; i < 8; i++) snd(HZ(i & 1 ? 1200 : 800), 3); break;         /* extra */
-    case 8: noi(4, 12, 6); break;                                       /* hit */
-    case 11: case 12: case 13: case 14: case 15:
-            noi(15 - (n - 10) * 2, 15, 8 + (n - 10) * 2); break;        /* gun bang */
-    case 20: snd(HZ(2000), 1); break;                                   /* click */
+    case 2: tone(HZ(1760), 0x7A, 2); tone(HZ(2349), 0x78, 3); break;                 /* beep (menu pick) */
+    case 3: for (i = 0; i < 18; i++) { tone(i & 1 ? HZ(110) : HZ(104), 0xBD - (i >> 2), 1); } break;   /* denied: a buzzer */
+    case 4: noi(0, 8, 2); for (i = 0; i < 2; i++) { pluck(HZ(2093), 4); pluck(HZ(2637), 4); } pluck(HZ(3136), 14); break;   /* deal: "cha-ching" */
+    case 5: siren(); break;                                                              /* police siren */
+    case 6: pluck(HZ(784), 5); pluck(HZ(988), 5); pluck(HZ(1175), 5); pluck(HZ(1568), 16); break;        /* news: a short fanfare */
+    case 7: for (i = 0; i < 3; i++) { slide(HZ(300), HZ(1800), 0x7C, 8); } pluck(HZ(1760), 12); break;  /* EXTRA!: three whoops */
+    case 8: noi(6, 12, 6); slide(HZ(300), HZ(60), 0xBE, 8); break;                           /* hit: a thud */
+    case 9: for (i = 0; i < 40; i++) { APU(0x0E) = 15 - (i >> 2); APU(0x0F) = 0x08; APU(0x0C) = 0x30 | (i < 32 ? 4 + (i >> 3) : 8 - (i & 7)); if (tick()) break; }   /* jet: engines spool up */
+            APU(0x0C) = 0x30; break;
+    case 10: slide(HZ(100), HZ(220), 0xBE, 10); slide(HZ(220), HZ(600), 0xBE, 25); break;      /* take-off: a rising whine */
+    case 11: bang(2, 5, 0); break;                                                       /* Saturday Night Special: a pop */
+    case 12: bang(3, 10, 0); break;                                                      /* Ruger: a crack */
+    case 13: bang(3, 18, 1); break;                                                      /* Auto Mag: a boom */
+    case 14: for (i = 0; i < 4; i++) { bang(1, 3, 0); APU(0x0C) = 0x30; tick(); } break;    /* Uzi: a burst */
+    case 15: for (i = 0; i < 3; i++) { bang(2, 6, 1); tick(); tick(); } break;              /* AK-47: three heavy rounds */
+    case 16: tone(HZ(330), 0xBC, 12); tone(HZ(311), 0xBC, 12); tone(HZ(294), 0xBC, 12); tone(HZ(220), 0xBC, 30); break;   /* death: four falling notes */
+    case 17: noi(8, 14, 5); slide(HZ(200), HZ(80), 0xBE, 6); break;                         /* punch */
+    case 20: tone(HZ(2093), 0x74, 1); break;                                             /* cursor tick */
     }
+    sfx_off();
 }
 
 /* ---- music: the title tune from tools/title.mid, played on pulse 1 / pulse 2 / triangle.  Each tune is a list of
@@ -189,6 +259,7 @@ const u8* m_d; static const u8* m_ab; static const u8* m_c;
 const u16* m_pp; static const u16* m_tp;
 u16 m_n, m_rate, m_ev, m_acc;
 u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
+u8 m_unit, m_nv;                /* 64th-note count in the bar (the drums), noise volume */
 void music_stop(void) {
     music_on = 0;
     APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30;
@@ -197,7 +268,7 @@ void music_start(void) {
     APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
     APU(0x01) = 0x08; APU(0x05) = 0x08;
     m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1;
-    m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0;
+    m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0; m_unit = 0; m_nv = 0;
     pend = 0; music_on = 1;
 }
 void music_note(u8 ab, u8 c) {
@@ -213,10 +284,19 @@ void music_frame(void) {
         if (m_wait) m_wait--;
         while (m_wait == 0) {
             music_note(m_ab[m_ev], m_c[m_ev]);
-            if (++m_ev >= m_n) m_ev = 0;
+            if (++m_ev >= m_n) { m_ev = 0; m_unit = 0; }
             m_wait = m_d[m_ev];
         }
+        /* drums on the noise channel: kick on the beat, snare on 2 and 4, a closed hat on the off-beats */
+        switch (m_unit & 63) {
+        case 0: case 32: APU(0x0E) = 0x0C; APU(0x0F) = 0x08; m_nv = 10; break;
+        case 16: case 48: APU(0x0E) = 0x06; APU(0x0F) = 0x08; m_nv = 8; break;
+        case 8: case 24: case 40: case 56: APU(0x0E) = 0x00; APU(0x0F) = 0x08; m_nv = 3; break;
+        }
+        m_unit++;
     }
+    if (m_nv) m_nv--;
+    APU(0x0C) = 0x30 | m_nv;
     m_cnt++;
     if (!(m_cnt & 3)) { if (m_v1 > 3) m_v1--; if (m_v2 > 2) m_v2--; }
     APU(0x00) = 0x70 | m_v1;        /* 25% duty, constant volume */
@@ -300,15 +380,12 @@ void gen_prices(void) {
     u8 d;
     for (d = 0; d < NUM_DRUGS; d++) price[d] = roll_price(d);
 }
-u16 isqrt32(u32 n) {
-    u16 r = 0;
-    while ((u32)(r + 1) * (r + 1) <= n) r++;
-    return r;
-}
-/* air fare = distance on the map * 60 + 25 */
+/* air fare = distance on the map * 60 + 25.  floor(sqrt(3600 * (dx^2 + dy^2))) comes from a table: the grid is
+ * 6 x 5, so dx^2 + dy^2 is at most 41 (the loop it replaces took a quarter of a second per city). */
+static const u16 dist60[42] = {0,60,84,103,120,134,146,158,169,180,189,198,207,216,224,232,240,247,254,261,268,274,281,287,293,300,305,311,317,323,328,334,339,344,349,354,360,364,369,374,379,384};
 i32 travel_cost(u8 a, u8 b) {
     i16 dx = (i16)city_x[a] - city_x[b], dy = (i16)city_y[a] - city_y[b];
-    return (i32)isqrt32(3600UL * (dx * dx + dy * dy)) + 25;
+    return (i32)dist60[dx * dx + dy * dy] + 25;
 }
 /* days the loan shark gives you:  ln(status*10000 / debt) / ln(1.2) + 4 */
 i16 loan_term(i16 stat, i32 total) {
@@ -411,27 +488,28 @@ u8 yn(void) {                /* A = yes, B = no */
 }
 
 /* ---- main screen ---- */
+/* the status block: labels in yellow (columns 1-7), values in white from column 8; drug names cyan, prices red */
+static void label(u8 y, const char* s) { ink = 1; ps_at(1, y, s); ink = 0; at(8, y); }
 void draw_status(void) {
     u8 i;
     space = hold;
     for (i = 0; i < NUM_DRUGS; i++) space -= inv[i];
-    ps_at(1, 3, "Date: ");
+    label(2, "Status:"); pn_l(status, 7); ink = 1; ps_at(16, 2, "Health:"); ink = 0; at(24, 2); pn_l(health, 4);
+    label(3, "Date:");
     { u8 y = year; pc('0' + month / 10); pc('0' + month % 10); pc('/');
       pc('0' + day / 10); pc('0' + day % 10); pc('/'); pc('0' + y / 10); pc('0' + y % 10); }
-    at(16, 3); ps_pad(city_name[city], 15);
-    ps_at(1, 4, "Cash:  $"); pn_l(cash, 11);
-    ps_at(1, 5, "Bank:  $"); pn_l(bank, 11);
-    ps_at(1, 6, "Debt:  $"); pn_l(debt, 10);
+    label(4, "City:"); ps_pad(city_name[city], 16);
+    label(5, "Cash:"); pc('$'); pn_l(cash, 11);
+    label(6, "Bank:"); pc('$'); pn_l(bank, 11);
+    label(7, "Debt:"); pc('$'); pn_l(debt, 10);
     if (loan_flag == 1) { pc('('); pn(loan_days); pc(')'); ps("   "); }
     else ps("     ");
-    ps_at(1, 7, "Hold: "); pn_l(space, 4); ps("("); pn(hold); ps(" max) ");
-    ps_at(1, 8, "Guns: "); pn_l(num_guns, 4); ps_pad(gun_name[gun_type], 14);
-    ps_at(1, 9, "Status: "); pn_l(status, 6); ps("Health: "); pn_l(health, 4);
+    label(8, "Hold:"); pn_l(space, 4); ps("("); pn(hold); ps(" max) ");
+    label(9, "Guns:"); pn_l(num_guns, 3); ps_pad(gun_name[gun_type], 14);
     for (i = 0; i < NUM_DRUGS; i++) {
-        at(2, ROW_DRUGS + i); ps_pad(drug_name[i], 8);
-        at(10, ROW_DRUGS + i); pc('$'); pn_r(price[i], 6);
-        ps("   ");
-        at(20, ROW_DRUGS + i); pn_r(inv[i], 5);
+        ink = 3; at(2, ROW_DRUGS + i); ps_pad(drug_name[i], 8);
+        ink = 2; at(10, ROW_DRUGS + i); pc('$'); pn_r(price[i], 6);
+        ink = 0; at(17, ROW_DRUGS + i); pn_r(inv[i], 8);
     }
 }
 void draw_main(void) {
@@ -440,7 +518,7 @@ void draw_main(void) {
     set_palette();
     ps_at(2, 1, "* * *  D R U G L O R D  * * *");
     ps_at(2, 11, "Drug       Price    Have");
-    for (x = 0; x < 28; x++) put(2 + x, 10, 2);
+    for (x = 0; x < 32; x++) put(x, 10, 2);
     colour_rows(0, 1, 2);
     colour_rows(10, 11, 1);
     draw_status();
@@ -462,9 +540,9 @@ i16 choose(u8 x, u8 y, u8 n, i16 start) {
         o = s;
         if (e & BTN_UP) s = s ? s - 1 : n - 1;
         else if (e & BTN_DOWN) s = s + 1 < n ? s + 1 : 0;
-        else if (e & BTN_A) { put(x, y + s, ' '); return s; }
+        else if (e & BTN_A) { put(x, y + s, ' '); sfx(2); return s; }
         else if (e & BTN_B) { for (i = 0; i < n; i++) put(x, y + i, ' '); return -1; }
-        if (o != s) put2(x, y + o, ' ', x, y + s, 0x10);
+        if (o != s) { put2(x, y + o, ' ', x, y + s, 0x10); sfx(20); }
     }
 }
 
@@ -495,6 +573,7 @@ i32 pick_number(u8 x, u8 y, u8 width, i32 maxv) {
             return v;
         } else if (e & BTN_B) return -1;
         put2(x + op, y, '0' + dig[op], x + pos, y, (u8)('0' + dig[pos]) | 0x80);
+        sfx(20);
     }
 }
 void msg_area(void) { clear_rows(20, 27); wx0 = 1; wx1 = 30; wy0 = 21; wy1 = 27; cx = 1; cy = 21; }

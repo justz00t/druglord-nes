@@ -58,7 +58,7 @@ static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_
     PPUADDR = 0x3F; PPUADDR = 0x09; PPUDATA = b;
     PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = c;
     PPUADDR = 0x3F; PPUADDR = 0x00; PPUADDR = 0; PPUADDR = 0;
-    PPUCTRL = 0; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void pal_default(void) { wait_vblank(); pal_set3(0x28, 0x16, 0x2C); }
 

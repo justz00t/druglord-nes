@@ -43,8 +43,8 @@ typedef uint32_t u32;
 #define HZ(f) ((u16)(111860UL / (f)))
 #define ROW_DRUGS 12
 #define START_X 10
-#define START_Y 18
-#define SND_COUNT 13
+#define START_Y 15
+#define SND_COUNT 18
 #define DBG_COUNT 23
 
 /* ---- shared state (defined in druglord.c) ---- */
@@ -53,11 +53,12 @@ extern u8 ppu_on;
 extern u8 cx, cy;
 extern u8 wx0, wx1;
 extern u8 wy0, wy1;
+extern u8 bgctl;
 extern u8 ink, attr_dirty;
 extern u8 attr[64];
 extern u8 pend;
 extern char nb[12];
-extern u8 pad_old;
+extern u8 pad_old, pend_btn;
 extern u16 frames;
 extern u32 seed;
 extern const char* const drug_name[NUM_DRUGS];
@@ -112,6 +113,9 @@ u8 vsync_pad(void);
 void delay(u8 n);
 u8 wait_btn(void);
 void snd(u16 per, u8 n);
+void tone(u16 per, u8 dv, u8 n);
+void p1(u16 per);
+void p2(u16 per);
 void noi(u8 idx, u8 vol, u8 n);
 void sfx(u8 n);
 void music_stop(void);
@@ -123,7 +127,6 @@ u16 rnd(void);
 i16 dice(i16 sides, i16 count);
 i32 roll_price(u8 d);
 void gen_prices(void);
-u16 isqrt32(u32 n);
 i32 travel_cost(u8 a, u8 b);
 i16 loan_term(i16 stat, i32 total);
 void interest_one_day(void);

@@ -3,6 +3,7 @@
 #define TBL_SCORE
 #include "tables.h"
 #include "title.h"
+#include "scene.h"
 
 void init_game(void) {
     u8 i;
@@ -68,6 +69,98 @@ u32 score_calc(i32 total, i16 pct) {
     p4 = (u32)((i32)gun_type * num_guns) * 1500UL;
     return p1 + p2 + p3 + p4;
 }
+/* ---- the end scene: the DOS picture (the table, the lamp, the coins) with a gun for each gun owned and
+ *      stacks of money that pile up with rising beeps, then the score in a box you scroll through ---- */
+static const u8 gun_x[10] = {20, 23, 26, 29, 0, 2, 5, 7, 10, 12};
+static const u8 gun_y[10] = {2, 5, 2, 5, 2, 5, 2, 5, 2, 5};
+/* write two tiles and one attribute byte during vblank (the screen stays on) */
+static void vb_bar(u8 x, u8 y) {
+    u8 i = (y >> 2) * 8 + (x >> 2), sh = ((y & 2) ? 4 : 0) + ((x & 2) ? 2 : 0);
+    attr[i] = (attr[i] & ~(3 << sh)) | (2 << sh);
+    if (((x + 1) >> 2) != (x >> 2)) { u8 j = i + 1; attr[j] = (attr[j] & ~(3 << sh)) | (2 << sh); }
+    wait_vblank(); frames++;
+    ppu_at(x, y); PPUDATA = bar_tiles[0]; PPUDATA = bar_tiles[1];
+    PPUADDR = 0x23; PPUADDR = 0xC0 + i; PPUDATA = attr[i];
+    if (((x + 1) >> 2) != (x >> 2)) { PPUADDR = 0x23; PPUADDR = 0xC1 + i; PPUDATA = attr[i + 1]; }
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+}
+static void end_scene(void) {
+    u8 x, y, i, k, idx, layer, nl, guns;
+    const u8* m = scene_map;
+    clear_screen();
+    load_pt1(2);
+    ppu_off();
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
+    PPUDATA = 0x0F; PPUDATA = 0x07; PPUDATA = 0x28; PPUDATA = 0x17;      /* 0: dark brown, yellow, brown */
+    PPUDATA = 0x0F; PPUDATA = 0x00; PPUDATA = 0x10; PPUDATA = 0x17;      /* 1: dark grey, grey, brown */
+    PPUDATA = 0x0F; PPUDATA = 0x1A; PPUDATA = 0x28; PPUDATA = 0x17;      /* 2: green, yellow, brown */
+    PPUDATA = 0x0F; PPUDATA = 0x30; PPUDATA = 0x2C; PPUDATA = 0x28;      /* 3: white, cyan, yellow (the score box) */
+    bgctl = 0x10;
+    for (y = 0; y < SCENE_H; y++) { ppu_at(1, y); for (x = 0; x < SCENE_W; x++) PPUDATA = *m++; }
+    colour_cols(0, 7, 7, 9, 1);                                          /* the lamp */
+    guns = num_guns < 10 ? (u8)num_guns : 10;
+    for (i = 0; i < guns; i++) {
+        x = gun_x[i]; y = gun_y[i];
+        for (k = 0; k < 9; k++) put(x + k % 3, y + k / 3, gun_tiles[k]);
+        colour_cols(y, y + 2, x >> 1, (x + 2) >> 1, 1);
+    }
+    ppu_show();
+    delay(30);
+    /* the stacks: one for every $100000 in hand, a new layer every $2000000, each with two rising beeps */
+    nl = (u8)((cash + bank - 1) / 2000000L) + 1;
+    if (nl > 4) nl = 4;
+    for (idx = 0; idx < 4; idx++)
+        for (k = 0; k < 5; k++)
+            for (layer = 0; layer < nl; layer++) {
+                if ((i32)(idx * 5 + k + 1) * 100000L + (i32)layer * 2000000L > cash) break;
+                vb_bar(6 + k * 3 - idx, 12 + idx - layer);
+                snd(HZ(1000 + layer * 500), 1); snd(HZ(3000 + layer * 500), 1);
+            }
+}
+/* the score list, 18 lines, 5 at a time in a box over the bottom of the scene */
+static const char* const end_line[18] = {
+    "   CONGRATULATIONS!!!", "", "Yous has become a", "DRUGLORD!!!  I'm proud ta", "know you, man!  Anyway,",
+    "check dis out --", "", "   Cash in Hand:", "   Cash in Bank:", "  Still in Debt:", "     Good Deals:",
+    "    Total Deals:", "         DEAL %:", "", "     Total Days:", "----------------  ----------", " OVERALL SCORE:", "          RANK:"};
+static i32 end_val[18];
+static void end_row(u8 y, u8 n) {
+    const char* s = end_line[n];
+    u8 l = 0;
+    at(2, y); ink = 3;                                /* palette 3 is the box's: white text on the scene */
+    if (n == 13) { ps_pad(gun_name[gun_type], 13); ps("'s:"); l = 16; }
+    else { while (*s) { pc((u8)*s++); l++; } }
+    while (l++ < 16) pc(' ');
+    if (n == 17) { ps_pad(rank_name[(u8)end_val[17]], 13); return; }
+    if ((n >= 7 && n <= 14 && n != 13) || n == 13 || n == 16) {
+        ltoa_s(end_val[n]);
+        if (n == 12) { for (l = 0; nb[l]; l++) {} nb[l] = '%'; nb[l + 1] = 0; }
+        for (l = 0; nb[l]; l++) {}
+        while (l++ < 13) pc(' ');
+        ps(nb);
+    } else ps_pad("", 13);
+}
+static void end_box(u32 score, u8 rk) {
+    u8 top = 0, i, e;
+    ppu_off();
+    clear_rows(18, 27);
+    colour_rows(18, 27, 3);
+    end_val[7] = cash; end_val[8] = bank; end_val[9] = debt; end_val[10] = good_deals; end_val[11] = total_deals;
+    end_val[12] = total_deals ? (i32)good_deals * 100 / total_deals : 0;
+    end_val[13] = num_guns; end_val[14] = total_days; end_val[16] = (i32)score; end_val[17] = rk;
+    ink = 3; box(0, 18, 32, 10);
+    ps_at(2, 27, "UP/DOWN scroll    A = done");
+    for (;;) {
+        for (i = 0; i < 6; i++) end_row(20 + i, top + i);
+        put(30, 19, top ? 0x1E : ' '); put(30, 26, top < 12 ? 0x1F : ' ');
+        do {
+            e = wait_btn();
+            if ((e & BTN_UP) && top) { top--; sfx(20); break; }
+            if ((e & BTN_DOWN) && top < 12) { top++; sfx(20); break; }
+        } while (!(e & BTN_A));
+        if (e & BTN_A) break;
+    }
+    ink = 0;
+}
 void show_win(void) {
     i16 pct = 0;
     u32 score;
@@ -77,27 +170,13 @@ void show_win(void) {
         ps_at(10, 12, "DRUGLORD!!!"); snd(HZ(500 + f * 150), 5);
         delay(25);
     }
-    page();
     if (total_deals != 0) pct = (i16)(good_deals * 100) / total_deals;
     score = score_calc(cash + bank - debt, pct);
     while (rk < 10 && rank_thr[rk] <= score) rk++;
-    ps_at(7, 1, "CONGRATULATIONS!!!");
-    wx0 = 1; wx1 = 30; wy0 = 3; wy1 = 6; cx = 1; cy = 3;
-    say("Yous has become a DRUGLORD!!!  I'm proud ta know you, man!  Anyway, check dis out --");
-    ps_at(1, 8,  "Cash in Hand:"); at(16, 8); pn(cash);
-    ps_at(1, 9,  "Cash in Bank:"); at(16, 9); pn(bank);
-    ps_at(1, 10, "Still in Debt:"); at(16, 10); pn(debt);
-    ps_at(1, 11, "Good Deals:"); at(16, 11); pn(good_deals);
-    ps_at(1, 12, "Total Deals:"); at(16, 12); pn(total_deals);
-    ps_at(1, 13, "DEAL %:"); at(16, 13); pn(pct); ps("%");
-    ps_at(1, 14, gun_name[gun_type]); ps("'s:"); at(16, 14); pn(num_guns);
-    ps_at(1, 15, "Total Days:"); at(16, 15); pn(total_days);
-    for (f = 1; f < 31; f++) put(f, 17, '-');
-    ps_at(1, 18, "OVERALL SCORE:"); at(16, 18); pn((i32)score);
-    ps_at(1, 19, "RANK:"); at(16, 19); ps(rank_name[rk]);
-    pal3(0x2A, 0x1A); colour_rows(0, 1, 1); colour_rows(18, 19, 3);
+    end_scene();
     sfx(4);
-    press_a();
+    end_box(score, rk);
+    set_palette();                                       /* the scene changed the game palettes */
     hs_after_win(score, rk);
 }
 
@@ -149,6 +228,7 @@ void title_screen(void) {
     const u8* m = logo_map;
     clear_screen();
     set_palette();
+    load_pt1(1);
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01;
     PPUDATA = 0x28; PPUDATA = 0x2A; PPUDATA = 0x16;          /* palette 0: yellow, green, red text */
@@ -262,7 +342,7 @@ void debug_menu(void) {
         case 11: ev_blackmail(); break;
         case 12: thugs_scene(); break;
         case 13: show_death(); break;
-        case 14: cash = 30000000L; total_days = 100; good_deals = total_deals = 50; show_win(); break;
+        case 14: cash = 30000000L; total_days = 100; good_deals = total_deals = 50; gun_type = 4; num_guns = 7; show_win(); break;
         case 15: ask_play_again(); break;
         case 16: exit_screen(); break;
         case 17: credits_screen(); break;

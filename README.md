@@ -34,6 +34,10 @@ On start-up a credits screen (4 seconds) is followed by the title screen: the DO
 |---|---|---|
 | ![main](docs/main.png) | ![jet](docs/jet.png) | ![death](docs/death.png) |
 
+When you win, the DOS end scene is drawn (the table, the lamp and the coins, from the original's `endScene` data at 3 x 8 pixels per text cell, in its own 4 KB tile set that is loaded into the second pattern table for that screen): a pistol for each gun you own, then the stacks of money pile up with rising beeps, one stack for every $100,000 and a new layer every $2,000,000, and the score list scrolls in a box over the bottom of it (UP/DOWN, A = done), as on the PC.
+
+![win](docs/win.png)
+
 **Sound effects** are played a frame at a time on pulse 2, the noise channel and (outside the title) pulse 1, so they can sweep: the police siren is a slow wail (500 to 1300 Hz and back, eased) followed by four fast yelps, with the second pulse a touch sharp so the two beat; the guns are a crack over a boom (the Auto Mag and AK-47 add a low thump; the Uzi and AK-47 fire bursts); the jet's engines spool up and whine off; deals ring up a cash register, the buzzer refuses, hits thud, the thugs' bat lands a punch, and the cursor ticks. A press of A cuts a long effect short (the debug ROM's sound test plays all of them).
 
 The rules, odds and formulas are the DOS original's (see "GAME RULES AND FORMULAS" in `c/DRUGLORD.C` of https://github.com/justz00t/druglord), including its
@@ -47,7 +51,7 @@ Original quirks are kept, e.g. banking does not pass a day and events only happe
 * Controller input instead of a keyboard.
 * No save game (the high-score table is kept in battery RAM instead).
 * The cop fight screen is simplified (one action line at a time), but uses the same rules.
-* The final scene (the table with the money) is not drawn; the death screen is the original's text.
+* The death screen is the original's text in its frame (no tombstone).
 * The jet menu shows a small map of the cities; the main screen colours the labels, drug names and prices.
 
 ## Build
@@ -56,4 +60,4 @@ Original quirks are kept, e.g. banking does not pass a day and events only happe
 The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main loop), `bank_a.c` (cop fight, events, menus), `bank_b.c` + `hiscore.c` (start/end screens, title, high scores, debug), `crt0.s` (start-up, bank switching), `dl.h` (shared declarations). Calls into the switchable banks go through `_bankcall` (cc65 `wrapped-call`).
 `tools/mkdata.py` creates the tiles (`chr.bin`), the title data (`title.h`), the music tables (`music.h`) and the score tables (`tables.h`).
 The font is the IBM PC 8x8 font, so tile numbers are DOS characters (tile + 0x80 is the inverted glyph, used as highlight; tiles 8-12 are the block and shade characters).
-The second pattern table, used only by the title screen, holds the same font plus the logo tiles (built from `tools/title_art.bin`, the DOS `titleArt` data) and copies of the glyphs in colours 2 and 3 for the coloured title text.
+PRG bank 2 holds three 4 KB tile sets: the game's (pattern table 0), the title's (the font plus the logo tiles built from `tools/title_art.bin`, the DOS `titleArt` data, and copies of the glyphs in colours 2 and 3 for the coloured title text) and the end scene's (the font plus the picture tiles from `tools/end_scene.bin` and `tools/gun_sprite.bin`, the stacks of money and the pistol); the last two are loaded into pattern table 1 as needed (`load_pt1`).

@@ -2,7 +2,7 @@
 ;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
-        .export         _exit, _bankcall, _bank_set
+        .export         _exit, _bankcall, _bank_set, _curbank
         .export         __STARTUP__ : absolute = 1
         .import         _main, zerobss, copydata, callptr4
         .import         __STACK_START__, __STACK_SIZE__
@@ -53,7 +53,7 @@ irq:    rti
 
 ; set the switchable PRG bank (A = 0..2); the value is written to a ROM byte that holds the same value (bus conflicts)
 _bank_set:
-        sta     curbank
+        sta     _curbank
         tay
         sta     banktab,y
         rts
@@ -63,7 +63,7 @@ _bankcall:
         pha                     ; A
         txa
         pha                     ; X
-        lda     curbank
+        lda     _curbank
         pha                     ; old bank
         lda     tmp4
         jsr     _bank_set
@@ -86,7 +86,7 @@ _bankcall:
 banktab: .byte  0, 1, 2, 3
 
 .segment "BSS"
-curbank: .res 1
+_curbank: .res 1
 
 .segment "VECTORS"
         .word   nmi

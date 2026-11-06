@@ -150,6 +150,8 @@ void msg_area(void);
 void msg_wait(void);
 void game(void);
 void load_font(void);
+void load_pt1(u8 set);
+extern u8 pt1_set;
 
 /* ---- functions in the switchable PRG banks: every call goes through _bankcall (see crt0.s) ---- */
 void bankcall(void);

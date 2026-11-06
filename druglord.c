@@ -644,6 +644,8 @@ void game(void) {
 
 extern const u8 NESfont[];                              /* the font lives in PRG bank 2 and is copied to CHR-RAM */
 void __fastcall__ bank_set(u8 b);
+extern u8 curbank;           /* the PRG bank mapped at $8000 (crt0.s) */
+u8 pt1_set;                  /* which 4 KB set is in pattern table 1: 1 = the title, 2 = the end scene */
 void load_font(void) {
     const u8* p = NESfont;
     u16 n;
@@ -651,6 +653,20 @@ void load_font(void) {
     latch = PPUSTATUS; PPUADDR = 0; PPUADDR = 0;
     for (n = 0; n < 8192; n++) PPUDATA = *p++;
     bank_set(0);
+    pt1_set = 1;
+}
+/* copy one of the 4 KB tile sets of PRG bank 2 into pattern table 1 (rendering must be off) */
+void load_pt1(u8 set) {
+    const u8* p = NESfont + (u16)set * 4096;
+    u16 n;
+    u8 b = curbank;                                  /* the caller may live in a switchable bank */
+    if (pt1_set == set) return;
+    ppu_off();
+    bank_set(2);
+    latch = PPUSTATUS; PPUADDR = 0x10; PPUADDR = 0;
+    for (n = 0; n < 4096; n++) PPUDATA = *p++;
+    bank_set(b);
+    pt1_set = set;
 }
 
 void main(void) {

@@ -1,6 +1,7 @@
 /* fixed PRG bank: the runtime, the text/sound/music engine, the rules, the main loop */
 #include "dl.h"
 #include "music.h"
+#include "menu.h"
 
 /* ======================================================================== */
 /*  PPU / text                                                              */
@@ -165,6 +166,7 @@ static u8 p1hi, p2hi;                /* last high period byte written: a $4003/$
 void p2(u16 per) { APU(0x06) = per & 255; if ((per >> 8) != p2hi) { p2hi = per >> 8; APU(0x07) = 0x08 | p2hi; } }
 void p1(u16 per) { APU(0x02) = per & 255; if ((per >> 8) != p1hi) { p1hi = per >> 8; APU(0x03) = 0x08 | p1hi; } }
 static u8 skip, sfx_t;
+u8 sfx_busy;                 /* a sound effect is playing: the menu music leaves pulse 2 and the noise alone */
 /* one frame of an effect.  A pressed after the first 8 frames cuts the effect short (and is used up by that);
  * a button pressed earlier is kept for the next wait_btn(), so a quick press is never lost to a click. */
 static u8 tick(void) {
@@ -173,10 +175,10 @@ static u8 tick(void) {
     if (e) { if ((e & BTN_A) && sfx_t > 8) { skip = 1; pend_btn = 0; } else pend_btn |= e; }
     return skip;
 }
-static void sfx_off(void) { APU(0x04) = 0x30; APU(0x0C) = 0x30; if (!music_on) APU(0x00) = 0x30; p1hi = p2hi = 0xFF; }
+static void sfx_off(void) { APU(0x04) = 0x30; APU(0x0C) = 0x30; if (!music_on) APU(0x00) = 0x30; p1hi = p2hi = 0xFF; sfx_busy = 0; }
 /* a steady tone on pulse 2: dv = duty | 0x30 | volume, n frames */
 void tone(u16 per, u8 dv, u8 n) { APU(0x04) = dv; p2(per); while (n--) if (tick()) break; }
-void snd(u16 per, u8 n) { ppu_show(); skip = 0; sfx_t = 0; p2hi = 0xFF; tone(per, 0xBC, n); APU(0x04) = 0x30; }
+void snd(u16 per, u8 n) { ppu_show(); skip = 0; sfx_t = 0; p2hi = 0xFF; sfx_busy = 1; tone(per, 0xBC, n); APU(0x04) = 0x30; sfx_busy = 0; }
 /* a noise burst that fades: idx = period index 0 (hiss) .. 15 (rumble), from volume vol over n frames */
 void noi(u8 idx, u8 vol, u8 n) {
     u8 i;
@@ -229,7 +231,7 @@ out:;
 void sfx(u8 n) {
     u8 i;
     ppu_show();
-    skip = 0; sfx_t = 0; p1hi = p2hi = 0xFF;
+    skip = 0; sfx_t = 0; p1hi = p2hi = 0xFF; sfx_busy = 1;
     switch (n) {
     case 2: tone(HZ(1760), 0x7A, 2); tone(HZ(2349), 0x78, 3); break;                 /* beep (menu pick) */
     case 3: for (i = 0; i < 18; i++) { tone(i & 1 ? HZ(110) : HZ(104), 0xBD - (i >> 2), 1); } break;   /* denied: a buzzer */
@@ -261,6 +263,62 @@ u16 m_n, m_rate, m_ev, m_acc;
 u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
 u8 m_unit, m_nv;                /* 64th-note count in the bar (the drums), noise volume */
 u8 m_loops;                     /* times the tune has played through since music_start() */
+u8 m_song;                      /* 0 = the title tune, 1 = the main-menu song (menu.h) */
+/* ---- the main-menu song: "boom bap" (tools/menu_song.py).  Swung 16ths of 11/9 frames; the triangle plays the
+ *      bass (and a pitch-drop "thump" under each kick), pulse 2 the chord stabs (a 4-note arpeggio, one note a
+ *      frame), pulse 1 the hook in bars 5-8, the noise the drums. ---- */
+static u8 mn_step, mn_fl;                         /* step 0-127, frames left in it */
+static u8 mn_tri, mn_tl, mn_thump;                /* bass note, frames left, kick thump frame (5 = none) */
+static u8 mn_chd, mn_sl, mn_stt;                  /* stab chord (0 = none), frames left, age */
+static u8 mn_hk, mn_hleft, mn_ht;                 /* hook note, frames left, age */
+static u8 mn_nv, mn_ni, mn_nm;                    /* noise volume, period, mode */
+static const u8 mn_thump_n[5] = {60, 50, 43, 38, 34};
+static void mn_noise(u8 v, u8 i, u8 md) { if (v >= mn_nv) { mn_nv = v; mn_ni = i; mn_nm = md; } }
+void menu_music_start(void) {
+    music_stop();
+    APU(0x15) = 0x0F; APU(0x01) = 0x08; APU(0x05) = 0x08;
+    mn_step = 127; mn_fl = 1; mn_tl = 0; mn_thump = 5; mn_sl = 0; mn_hleft = 0; mn_nv = 0;
+    m_song = 1; pend = 0; music_on = 1;
+}
+static void menu_frame(void) {
+    u8 x, d;
+    u16 p;
+    if (--mn_fl == 0) {                            /* a new step */
+        if (++mn_step >= 128) mn_step = 0;
+        mn_fl = (mn_step & 1) ? 9 : 11;
+        x = mn_step & 63;
+        if (mn_bn[x]) { mn_tri = mn_bn[x]; mn_tl = mn_bl[x] * 10 - 1; }
+        if (mn_st[x]) { mn_chd = mn_st[x]; mn_sl = 19; mn_stt = 0; }
+        if (mn_step >= 64 && mn_hn[x]) { mn_hk = mn_hn[x]; mn_hleft = mn_hl[x] * 10 - 1; mn_ht = 0; }
+        d = mn_dr[mn_step & 31];
+        if (d & 3) mn_noise(13, 13, 0);
+        if (d & 1) mn_thump = 0;
+        if (d & 4) mn_noise(12, 6, 0);
+        if (d & 0x70) mn_noise(d >> 4, 1, 0x80);
+    }
+    /* triangle: the thump, else the bass */
+    if (mn_thump < 5) { p = (mn_per[mn_thump_n[mn_thump] - MN_LO] + 1) / 2 - 1; mn_thump++; }
+    else if (mn_tl) { p = (mn_per[mn_tri - MN_LO] + 1) / 2 - 1; mn_tl--; }
+    else p = 0;
+    if (p) { APU(0x08) = 0xFF; APU(0x0A) = p & 255; APU(0x0B) = p >> 8; } else APU(0x08) = 0x80;
+    /* pulse 1: the hook, a 25% pulse that fades to a floor, with vibrato */
+    if (mn_hleft) {
+        p = mn_per[mn_hk - MN_LO];
+        if (mn_ht > 6) { d = (mn_ht - 6) % 10; if (d < 5) p += p >> 8; else p -= p >> 8; }
+        x = mn_ht / 6; x = x < 6 ? 10 - x : 4;
+        APU(0x00) = 0x70 | x; p1(p);
+        mn_ht++; mn_hleft--;
+    } else APU(0x00) = 0x30;
+    if (sfx_busy) return;
+    /* pulse 2: the stab, a 25% arpeggio that dies away */
+    if (mn_sl) {
+        x = mn_stt >> 1; x = x < 10 ? 10 - x : 0;
+        APU(0x04) = 0x70 | x; p2(mn_per[mn_ch[(mn_chd - 1) * 4 + (mn_stt & 3)] - MN_LO]);
+        mn_stt++; mn_sl--;
+    } else APU(0x04) = 0x30;
+    /* noise: each hit dies away one step a frame */
+    if (mn_nv) { APU(0x0E) = mn_ni | mn_nm; APU(0x0F) = 0x08; APU(0x0C) = 0x30 | mn_nv; mn_nv--; } else APU(0x0C) = 0x30;
+}
 void music_stop(void) {
     music_on = 0;
     APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30;
@@ -268,6 +326,7 @@ void music_stop(void) {
 void music_start(void) {
     APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
     APU(0x01) = 0x08; APU(0x05) = 0x08;
+    m_song = 0;
     m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1;
     m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0; m_unit = 0; m_nv = 0; m_loops = 0;
     pend = 0; music_on = 1;
@@ -279,6 +338,7 @@ void music_note(u8 ab, u8 c) {
     if (c) { u16 p = m_tp[c]; APU(0x0A) = p & 255; APU(0x0B) = 0x08 | (p >> 8); APU(0x08) = 0xFF; m_tage = 0; m_tri = 1; }
 }
 void music_frame(void) {
+    if (m_song) { menu_frame(); return; }
     m_acc += m_rate;
     while (m_acc >= 256) {
         m_acc -= 256;
@@ -474,6 +534,7 @@ void press_a(void) {
 }
 /* full-screen message page: clears the screen, returns with the cursor at the top */
 void page(void) {
+    if (m_song) music_stop();                            /* the menu song is for the main screen only */
     clear_screen();
     wx0 = 1; wx1 = 30; wy0 = 1; wy1 = 26;
     cx = 1; cy = 1;
@@ -593,6 +654,7 @@ void game(void) {
             u8 adv = 0;
             draw_status();
             if (status >= WIN_STATUS) break;
+            if (!music_on) menu_music_start();
             msg_area();
             ink = 3; ps_at(2, 21, "Buy drugs");
             ps_at(2, 22, "Sell drugs");

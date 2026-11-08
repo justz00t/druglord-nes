@@ -269,24 +269,25 @@ static void snake(signed char h, signed char dir) {
         logo_q[c] = d < 0 || d > 5 ? 0 : 1 + (d >> 1);
     }
 }
-/* the title screen with its music; returns when START (or A) is pressed.  After the tune has played 10 times the
- * high score table is shown for 2 seconds, then the title again. */
-#ifndef TITLE_PLAYS
-#define TITLE_PLAYS 10               /* plays of the title tune before the score table */
+/* the title screen with its music; returns when START (or A) is pressed.  After 60 seconds the high score table
+ * is shown for 2 seconds, then the title again. */
+#ifndef TITLE_FRAMES
+#define TITLE_FRAMES 3600            /* 60 seconds of the title screen before the score table */
 #endif
 #define SNAKE_SPEED 3                /* frames per column */
 #define FLASH_TIME 10                /* frames per colour of the flash */
 void title_wait(void) {
     u8 e, blink, t;
+    u16 tf;
     signed char h, dir;
     u8 flash;
     for (;;) {
         music_start();
         title_screen();
         ppu_show();
-        blink = 0; t = 0; h = 0; dir = 1; flash = 0;
+        blink = 0; t = 0; h = 0; dir = 1; flash = 0; tf = 0;
         snake(h, dir);
-        while (m_loops < TITLE_PLAYS) {
+        while (++tf < TITLE_FRAMES) {
             /* one step of the logo animation */
             if (++t >= (flash ? FLASH_TIME : SNAKE_SPEED)) {
                 t = 0;

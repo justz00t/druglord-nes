@@ -228,11 +228,11 @@ static void siren(void) {
     }
 out:;
 }
-/* the EXTRA! sting: a news-wire xylophone.  Quick taps on one note in a teletype rhythm (pulse 2), higher accents
- * on pulse 1 (the music is off on these screens), a little noise tick for each mallet, and a two-note hit at the end.
- * xs_gap = frames to the next tap; xs_acc = 0 a tap, 1 an accent a fifth up, 2 an accent an octave up, 3 the end. */
-static const u8 xs_gap[] = {5,5,10,5,5,5,15, 5,5,10,5,10,5,15, 5,5,5,5,10,5,5,15, 5,5,10,5,5,5,5,5,20, 0};
-static const u8 xs_acc[] = {0,0,1,0,0,0,2,  0,0,0,1,0,0,2,  0,0,0,0,1,0,0,2,  0,0,1,0,2,0,1,0,3,  3};
+/* the EXTRA! sting: a news-wire xylophone.  One short figure on one note, over and over (tap-tap-taaap, a teletype
+ * feel) on pulse 2, with a little noise tick for each mallet; the last figure ends on a ringing two-note hit.
+ * xs_gap = frames to the next tap; xs_acc = 0 a tap, 3 the end. */
+static const u8 xs_gap[] = {5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 0};
+static const u8 xs_acc[] = {0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  3};
 static void news_sting(void) {
     u8 i = 0, w = 0, v1 = 0, v2 = 0, f = 0;
     APU(0x04) = 0x70; APU(0x00) = 0x70;

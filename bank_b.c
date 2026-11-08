@@ -130,23 +130,44 @@ static const char* const end_line[18] = {
     "check dis out --", "", "   Cash in Hand:", "   Cash in Bank:", "  Still in Debt:", "     Good Deals:",
     "    Total Deals:", "         DEAL %:", "", "     Total Days:", "----------------  ----------", " OVERALL SCORE:", "          RANK:"};
 static i32 end_val[18];
-/* one line of the score list: 16 + 12 characters in columns 2-29, clear of the scroll arrows (30) and the frame (31) */
-static void end_row(u8 y, u8 n) {
-    const char* s = end_line[n];
-    u8 l = 0;
-    at(2, y); ink = 3;                                /* palette 3 is the box's: white text on the scene */
-    if (n == 15) { ps("----------------  ----------"); return; }   /* the rule: exactly 28 */
-    if (n == 13) { ps_pad(gun_name[gun_type], 13); ps("'s:"); l = 16; }
-    else { while (*s) { pc((u8)*s++); l++; } }
-    if (n == 17) { while (l < 16) { pc(' '); l++; } ps_pad(rank_name[(u8)end_val[17]], 12); return; }
+/* one line of the score list, built into row_b[]: 16 + 12 characters for columns 2-29, clear of the scroll
+ * arrows (30) and the frame (31) */
+static char row_b[28];
+static u8 row_l;
+static void rb_c(char c) { if (row_l < 28) row_b[row_l++] = c; }
+static void rb_s(const char* t) { while (*t) rb_c(*t++); }
+static void rb_pad(u8 to) { while (row_l < to) row_b[row_l++] = ' '; }
+static void end_row(u8 n) {
+    u8 l;
+    row_l = 0;
+    if (n == 15) { rb_s("----------------  ----------"); return; }   /* the rule: exactly 28 */
+    if (n == 13) { rb_s(gun_name[gun_type]); rb_pad(13); rb_s("'s:"); }
+    else rb_s(end_line[n]);
+    if (n == 17) { rb_pad(16); rb_s(rank_name[(u8)end_val[17]]); rb_pad(28); return; }
     if ((n >= 7 && n <= 14) || n == 16) {            /* a label (16) and a number (12, right-aligned) */
-        while (l < 16) { pc(' '); l++; }
+        rb_pad(16);
         ltoa_s(end_val[n]);
         if (n == 12) { for (l = 0; nb[l]; l++) {} nb[l] = '%'; nb[l + 1] = 0; }
         for (l = 0; nb[l]; l++) {}
-        while (l++ < 12) pc(' ');
-        ps(nb);
-    } else while (l < 28) { pc(' '); l++; }          /* a line of the message: padded to 28, never longer */
+        rb_pad(28 - l); rb_s(nb);
+    }
+    rb_pad(28);                                       /* a line of the message: padded to 28, never longer */
+}
+/* write row_b[] to screen row y during vblank, the picture staying on (no flicker) */
+static void vb_row(u8 y) {
+    u8 i;
+    wait_vblank(); frames++;
+    latch = PPUSTATUS;
+    ppu_at(2, y);
+    for (i = 0; i < 28; i++) PPUDATA = (u8)row_b[i];
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+}
+static void vb_arrows(u8 top) {
+    wait_vblank(); frames++;
+    latch = PPUSTATUS;
+    ppu_at(30, 19); PPUDATA = top ? 0x1E : ' ';
+    ppu_at(30, 26); PPUDATA = top < 12 ? 0x1F : ' ';
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void end_box(u32 score, u8 rk) {
     u8 top = 0, i, e;
@@ -158,15 +179,20 @@ static void end_box(u32 score, u8 rk) {
     end_val[13] = num_guns; end_val[14] = total_days; end_val[16] = (i32)score; end_val[17] = rk;
     ink = 3; box(0, 18, 32, 10);
     ps_at(2, 27, "UP/DOWN scroll    A = done");
+    for (i = 0; i < 6; i++) {                        /* the first page: drawn with the screen off */
+        end_row(i); at(2, 20 + i);
+        for (e = 0; e < 28; e++) pc((u8)row_b[e]);
+    }
+    put(30, 19, ' '); put(30, 26, 0x1F);
     for (;;) {
-        for (i = 0; i < 6; i++) end_row(20 + i, top + i);
-        put(30, 19, top ? 0x1E : ' '); put(30, 26, top < 12 ? 0x1F : ' ');
         do {
             e = wait_btn();
             if ((e & BTN_UP) && top) { top--; sfx(20); break; }
             if ((e & BTN_DOWN) && top < 12) { top++; sfx(20); break; }
         } while (!(e & BTN_A));
         if (e & BTN_A) break;
+        for (i = 0; i < 6; i++) { end_row(top + i); vb_row(20 + i); }   /* scrolling: a row a frame, screen on */
+        vb_arrows(top);
     }
     ink = 0;
 }

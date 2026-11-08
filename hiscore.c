@@ -51,10 +51,8 @@ static void hs_insert(u8 pos, const char* nm, u32 s) {
 }
 
 /* ---- the table's colours: palette 0 white (the headings, "Press A to continue"), 1 solid blue (the lines),
- *      2 the title cycling red, yellow, green, cyan, blue, magenta, 3 the new entry flashing blue and white.
- *      The entry screen still uses the old rainbow on palettes 1-3. ---- */
-static const u8 rainbow[7] = {0x28, 0x16, 0x2C, 0x2A, 0x30, 0x24, 0x27};
-static const u8 hue[6] = {0x16, 0x28, 0x1A, 0x2C, 0x12, 0x14};
+ *      2 the title pulsing light red to dark red, 3 the new entry flashing blue and white. ---- */
+static const u8 reds[6] = {0x36, 0x26, 0x16, 0x06, 0x16, 0x26};   /* light red to dark red and back */
 #define HS_BLUE 0x12
 static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_vblank() */
     latch = PPUSTATUS;
@@ -65,7 +63,7 @@ static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_
     PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void pal_default(void) { wait_vblank(); pal_set3(0x28, 0x16, 0x2C); }
-static void hs_colours(u8 f) { pal_set3(HS_BLUE, hue[(f >> 3) % 6], (f & 8) ? 0x30 : HS_BLUE); }
+static void hs_colours(u8 f) { pal_set3(HS_BLUE, reds[(f >> 3) % 6], (f & 8) ? 0x30 : HS_BLUE); }
 
 /* ---- the table: the headings are drawn at once, then the ten lines fall into place one at a time, 10 first.
  *      A falling line moves down a row a frame: during vblank its old row is blanked and its new row written
@@ -164,24 +162,28 @@ static void entry_letters(char* nm, u8 cur) {
 }
 void hs_entry(u8 pos, u32 score, u8 rk) {
     char nm[3];
-    u8 cur = 0, e, rep = 0, f = 0, k = 0, go = 0;
+    u8 cur = 0, e, rep = 0, f = 0, go = 0;
     nm[0] = nm[1] = nm[2] = 'A';
     page();
+    /* palettes: 0 white (the text), 1 the title pulsing light red to dark red, 2 blue (the initials and the
+     * cursor), 3 green (the instructions) */
     ink = 1; ps_at(6, 1, "NEW  HIGH  SCORE!!!");
-    ink = 3; ps_at(5, 5, "You made place "); pn(pos + 1); ps(" of 10");
-    ink = 2; ps_at(5, 8, "SCORE"); at(12, 8); pn((i32)score);
-    ink = 1; ps_at(5, 10, "RANK"); at(12, 10); ps(rank_name[rk]);
-    ink = 0; ps_at(6, 13, "ENTER YOUR INITIALS");
-    ink = 1; ps_at(12, 15, "A  A  A");
+    ink = 0; ps_at(5, 5, "You made place "); pn(pos + 1); ps(" of 10");
+    ps_at(5, 8, "SCORE"); at(12, 8); pn((i32)score);
+    ps_at(5, 10, "RANK"); at(12, 10); ps(rank_name[rk]);
+    ps_at(6, 13, "ENTER YOUR INITIALS");
+    ink = 2; ps_at(12, 15, "A  A  A");
+    colour_rows(16, 17, 2);                              /* the cursor row too */
     ink = 3; ps_at(2, 20, "UP/DOWN letter  L/R move");
     ps_at(2, 22, "A next / OK   B back");
     ps_at(2, 24, "START = done");
+    ink = 0;
     ppu_show();
     vic_start();                                     /* the victory tune, on into the table that follows */
     entry_letters(nm, cur);
     while (!go) {
         wait_vblank(); frames++;
-        if (!(f++ & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        if (!(f++ & 7)) pal_set3(reds[(f >> 3) % 6], HS_BLUE, 0x2A);
         music_update();                               /* after the palette: vblank is for the PPU */
         e = read_pad();
         { u8 d = e & ~pad_old; pad_old = e; if ((e & (BTN_UP | BTN_DOWN)) && ++rep > 16 && (rep & 3) == 0) d |= e & (BTN_UP | BTN_DOWN); if (!(e & (BTN_UP | BTN_DOWN))) rep = 0; e = d; }

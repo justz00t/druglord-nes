@@ -254,24 +254,27 @@ static void big_step(u8 w, u8 h, u8 col) {
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = col;
     ppu_show();                                       /* on again, in vblank */
 }
+/* the sound for each flash of DRUGLORD!!! (f = 0..4) */
+static void druglord_sfx(u8 f) {
+    static const u16 n[5] = {HZ(523), HZ(659), HZ(784), HZ(1047), HZ(1319)};
+    snd(n[f], 6);
+}
 void show_win(void) {
     i16 pct = 0;
     u32 score;
     u8 rk = 0, f;
-    /* five sizes (11, 16, 22, 27 and 32 tiles wide) going white, pale pink, pink, red, dark red; a note with each
-     * flash, and a last flash at full size */
-    static const u8 bw[5] = {11, 16, 22, 27, 32}, bh[5] = {1, 2, 2, 3, 3};
-    static const u8 bcol[5] = {0x30, 0x36, 0x26, 0x16, 0x06};
-    static const u16 do_note[6] = {HZ(523), HZ(587), HZ(659), HZ(784), HZ(880), HZ(1047)};
+    /* "DRUGLORD!!!" 27 tiles wide in white, flashing on and off five times, as the DOS version flashes it */
     music_stop();
     for (f = 0; f < 11; f++) big_g[f] = big_idx(big_text[f]) * 8;
-    for (f = 0; f < 6; f++) {
-        if (f < 5) big_step(bw[f], bh[f], bcol[f]);
-        else { vb_pal(0x01, 0x0F); cr_wait(4); vb_pal(0x01, 0x06); }   /* the last flash: off and on */
-        snd(do_note[f], 6);
-        cr_wait(14);
+    big_step(27, 3, 0x0F);                            /* drawn while black */
+    for (f = 0; f < 5; f++) {
+        vb_pal(0x01, 0x30);                           /* on, with the sound */
+        druglord_sfx(f);
+        cr_wait(16);
+        vb_pal(0x01, 0x0F);                           /* off */
+        cr_wait(8);
     }
-    cr_wait(40);
+    vb_pal(0x01, 0x30); cr_wait(40);
     if (total_deals != 0) pct = (i16)(good_deals * 100) / total_deals;
     score = score_calc(cash + bank - debt, pct);
     while (rk < 10 && rank_thr[rk] <= score) rk++;

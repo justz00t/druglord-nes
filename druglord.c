@@ -307,13 +307,14 @@ static const u8 mn_len[6] = {9, 8, 9, 8, 10, 8};
 static u8 mn_tri, mn_tl, mn_thump;                /* bass note, frames left, kick thump frame (5 = none) */
 static u8 mn_chd, mn_sl, mn_stt;                  /* stab chord (0 = none), frames left, age */
 static u8 mn_hk, mn_hleft, mn_ht;                 /* hook note, frames left, age */
-static u8 mn_nv, mn_ni, mn_nm;                    /* noise volume, period, mode */
+static u8 mn_nv, mn_ni, mn_nm, mn_nd;             /* noise volume, period, mode, volume lost per frame */
 static const u8 mn_thump_n[5] = {60, 50, 43, 38, 34};
-static void mn_noise(u8 v, u8 i, u8 md) { if (v >= mn_nv) { mn_nv = v; mn_ni = i; mn_nm = md; } }
+/* a drum hit always cuts off the one before it (a long tail under the next hit smears into a crash) */
+static void mn_noise(u8 v, u8 i, u8 md, u8 dec) { mn_nv = v; mn_ni = i; mn_nm = md; mn_nd = dec; }
 void menu_music_start(void) {
     music_stop();
     APU(0x15) = 0x0F; APU(0x01) = 0x08; APU(0x05) = 0x08;
-    mn_step = 127; mn_fl = 1; mn_sw = 0; mn_tl = 0; mn_thump = 5; mn_sl = 0; mn_hleft = 0; mn_nv = 0;
+    mn_step = 127; mn_fl = 1; mn_sw = 0; mn_nd = 1; mn_tl = 0; mn_thump = 5; mn_sl = 0; mn_hleft = 0; mn_nv = 0;
     m_song = 1; pend = 0; music_on = 1;
 }
 static void menu_frame(void) {
@@ -327,10 +328,10 @@ static void menu_frame(void) {
         if (mn_st[x]) { mn_chd = mn_st[x]; mn_sl = 16; mn_stt = 0; }
         if (mn_step >= 64 && mn_hn[x]) { mn_hk = mn_hn[x]; mn_hleft = mn_hl[x] * 9 - 1; mn_ht = 0; }
         d = mn_dr[mn_step & 31];
-        if (d & 3) mn_noise(13, 13, 0);
+        if (d & 0x70) mn_noise(d >> 4, 1, 0x80, 2);           /* hi-hat: 2-3 frames */
+        if (d & 3) mn_noise(10, 12, 0, 4);                    /* kick: a 3-frame click, the triangle does the rest */
         if (d & 1) mn_thump = 0;
-        if (d & 4) mn_noise(12, 6, 0);
-        if (d & 0x70) mn_noise(d >> 4, 1, 0x80);
+        if (d & 4) mn_noise(12, 6, 0, 2);                     /* snare: 6 frames */
     }
     /* triangle: the thump, else the bass */
     if (mn_thump < 5) { p = (mn_per[mn_thump_n[mn_thump] - MN_LO] + 1) / 2 - 1; mn_thump++; }
@@ -353,7 +354,7 @@ static void menu_frame(void) {
         mn_stt++; mn_sl--;
     } else APU(0x04) = 0x30;
     /* noise: each hit dies away one step a frame */
-    if (mn_nv) { APU(0x0E) = mn_ni | mn_nm; APU(0x0F) = 0x08; APU(0x0C) = 0x30 | mn_nv; mn_nv--; } else APU(0x0C) = 0x30;
+    if (mn_nv) { APU(0x0E) = mn_ni | mn_nm; APU(0x0F) = 0x08; APU(0x0C) = 0x30 | mn_nv; mn_nv = mn_nv > mn_nd ? mn_nv - mn_nd : 0; } else APU(0x0C) = 0x30;
 }
 void music_stop(void) {
     music_on = 0;

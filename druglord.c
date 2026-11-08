@@ -19,14 +19,15 @@ u8 bgctl;                /* PPUCTRL value: bit 4 picks pattern table 1 (the titl
 u8 ink, attr_dirty;      /* current text colour (palette 0..3); pc() colours its 2x2-tile attribute block with it */
 u8 attr[64];
 u8 pend;
-void wait_vblank(void) { while (!(PPUSTATUS & 0x80)) {} if (pend < 6) pend++; }
+extern volatile u8 nmi_count;   /* bumped by the NMI at the start of every vblank (crt0.s) */
+void wait_vblank(void) { u8 c = nmi_count; while (nmi_count == c) {} if (pend < 6) pend++; }
 void music_update(void);
 void ppu_off(void) { if (ppu_on) { wait_vblank(); PPUMASK = 0; ppu_on = 0; } }
 void ppu_show(void) {
     if (!ppu_on) {
         if (attr_dirty) { u8 i; attr_dirty = 0; latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0; for (i = 0; i < 64; i++) PPUDATA = attr[i]; }
         wait_vblank();
-        PPUCTRL = bgctl; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
+        PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
         PPUMASK = 0x0A; ppu_on = 1;
     }
 }
@@ -40,7 +41,7 @@ void put2(u8 x1, u8 y1, u8 c1, u8 x2, u8 y2, u8 c2) {
     if (ppu_on) wait_vblank();
     ppu_at(x1, y1); PPUDATA = c1;
     ppu_at(x2, y2); PPUDATA = c2;
-    if (ppu_on) { PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0; }
+    if (ppu_on) { PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0; }
 }
 void fill(u8 x, u8 y, u8 ch, u8 n) {
     ppu_off(); ppu_at(x, y);
@@ -450,6 +451,7 @@ void music_note(u8 ab, u8 c) {
 void music_frame(void) {
     if (m_song == 1) { menu_frame(); return; }
     if (m_song == 2) { easter_frame(); return; }
+    if (m_song == 3) { vic_frame(); return; }
     m_acc += m_rate;
     while (m_acc >= 256) {
         m_acc -= 256;
@@ -645,7 +647,7 @@ void press_a(void) {
 }
 /* full-screen message page: clears the screen, returns with the cursor at the top */
 void page(void) {
-    if (m_song) music_stop();                            /* the menu song is for the main screen only */
+    if (m_song == 1 || m_song == 2) music_stop();        /* the menu songs are for the main screen only (the victory tune goes on) */
     clear_screen();
     wx0 = 1; wx1 = 30; wy0 = 1; wy1 = 26;
     cx = 1; cy = 1;
@@ -843,7 +845,7 @@ void load_pt1(u8 set) {
 }
 
 void main(void) {
-    PPUCTRL = 0; PPUMASK = 0;
+    PPUCTRL = 0x80; PPUMASK = 0;           /* NMI on from the start (wait_vblank counts on it) */
     load_font();
     wait_vblank(); wait_vblank();
     hs_init();

@@ -89,7 +89,7 @@ static void vb_bar(u8 x, u8 y) {
     ppu_at(x, y); PPUDATA = bar_tiles[0]; PPUDATA = bar_tiles[1];
     PPUADDR = 0x23; PPUADDR = 0xC0 + i; PPUDATA = attr[i];
     if (j != i) { PPUADDR = 0x23; PPUADDR = 0xC0 + j; PPUDATA = attr[j]; }
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void end_scene(void) {
     u8 x, y, i, k, idx, layer, nl, guns;
@@ -160,14 +160,14 @@ static void vb_row(u8 y) {
     latch = PPUSTATUS;
     ppu_at(2, y);
     for (i = 0; i < 28; i++) PPUDATA = (u8)row_b[i];
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void vb_arrows(u8 top) {
     wait_vblank(); frames++;
     latch = PPUSTATUS;
     ppu_at(30, 19); PPUDATA = top ? 0x1E : ' ';
     ppu_at(30, 26); PPUDATA = top < 12 ? 0x1F : ' ';
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void end_box(u32 score, u8 rk) {
     u8 top = 0, i, e;
@@ -273,7 +273,7 @@ static void druglord_fanfare(void) {
             wait_vblank(); frames++;
             latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = on ? 0x30 : 0x0F;
             PPUADDR = 0x3F; PPUADDR = 0; PPUADDR = 0; PPUADDR = 0;
-            PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+            PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
             v = t / 3; v = v < 5 ? 13 - v : 8;        /* a bright attack settling to a held level */
             if (i == FF_N - 1 && t > 27) v = 8 - (t - 27);   /* the last note dies away */
             {
@@ -348,7 +348,7 @@ static void vb_pal(u8 a, u8 v) {     /* set one palette entry during vblank, the
     wait_vblank(); frames++;
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = a; PPUDATA = v;
     PPUADDR = 0x3F; PPUADDR = 0; PPUADDR = 0; PPUADDR = 0;
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void cr_wait(u8 n) { while (n--) { wait_vblank(); frames++; } }
 void credits_screen(void) {
@@ -394,7 +394,7 @@ void credits_screen(void) {
         for (j = 0; j < land_n; j++) {
             PPUADDR = 0x22; PPUADDR = (CR_ROW - 16) * 32 + CR_X + land[j]; PPUDATA = (u8)cr_text[land[j]];
         }
-        PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+        PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
     }
     PPUMASK = 0x0A;                                      /* sprites off again */
     cr_wait(15);
@@ -501,7 +501,7 @@ void title_wait(void) {
                 latch = PPUSTATUS;
                 logo_attr_put();
             }
-            PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+            PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
             frames++; blink++;
             music_update();
             e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }

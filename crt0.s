@@ -2,7 +2,7 @@
 ;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
-        .export         _exit, _bankcall, _bank_set, _curbank
+        .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count
         .export         __STARTUP__ : absolute = 1
         .import         _main, zerobss, copydata, callptr4
         .import         __STACK_START__, __STACK_SIZE__
@@ -48,7 +48,9 @@ start:
         jsr     _main
 _exit:  jmp     start
 
-nmi:
+; NMI: count frames.  wait_vblank() waits for this count to change, so it always returns at the very start of
+; vblank (polling PPUSTATUS could return late in vblank, and writes that spill past vblank corrupt the picture)
+nmi:    inc _nmi_count
 irq:    rti
 
 ; set the switchable PRG bank (A = 0..2); the value is written to a ROM byte that holds the same value (bus conflicts)
@@ -92,3 +94,6 @@ _curbank: .res 1
         .word   nmi
         .word   start
         .word   irq
+
+.segment "BSS"
+_nmi_count: .res 1

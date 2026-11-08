@@ -58,7 +58,7 @@ static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_
     PPUADDR = 0x3F; PPUADDR = 0x09; PPUDATA = b;
     PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = c;
     PPUADDR = 0x3F; PPUADDR = 0x00; PPUADDR = 0; PPUADDR = 0;
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void pal_default(void) { wait_vblank(); pal_set3(0x28, 0x16, 0x2C); }
 
@@ -74,7 +74,7 @@ static void hs_draw(u8 hl) {
         ink = (i == hl) ? 2 : hs_ink[i];
         at(1, y); pn_r(i + 1, 2); pc('.');
         at(5, y);
-        for (j = 0; j < 3; j++) pc((u8)HS[i].n[j] | (i == hl ? 0x80 : 0));
+        for (j = 0; j < 3; j++) pc((u8)HS[i].n[j]);   /* the new entry stands out by its colour, not inverted */
         at(9, y); pn_r((i32)HS[i].sc, 8);
         at(18, y); ps(rank_name[HS[i].rk]);
     }
@@ -86,8 +86,9 @@ void hs_show(u8 hl) {
     ink = 3; ps_at(1, 27, "Press A to continue");
     ppu_show();
     for (;;) {
-        wait_vblank(); frames++; music_update();
+        wait_vblank(); frames++;
         if (!(f++ & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        music_update();                               /* after the palette: vblank is for the PPU */
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
         if (e & BTN_A) break;
     }
@@ -140,11 +141,12 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
     ps_at(2, 22, "A next / OK   B back");
     ps_at(2, 24, "START = done");
     ppu_show();
-    sfx(7);
+    vic_start();                                     /* the victory tune, on into the table that follows */
     entry_letters(nm, cur);
     while (!go) {
-        wait_vblank(); frames++; music_update();
+        wait_vblank(); frames++;
         if (!(f++ & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        music_update();                               /* after the palette: vblank is for the PPU */
         e = read_pad();
         { u8 d = e & ~pad_old; pad_old = e; if ((e & (BTN_UP | BTN_DOWN)) && ++rep > 16 && (rep & 3) == 0) d |= e & (BTN_UP | BTN_DOWN); if (!(e & (BTN_UP | BTN_DOWN))) rep = 0; e = d; }
         if (e & BTN_UP) { nm[cur] = nm[cur] == 'Z' ? 'A' : nm[cur] + 1; entry_letters(nm, cur); }
@@ -165,4 +167,5 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
 void hs_after_win(u32 score, u8 rk) {
     u8 pos = hs_place(score);
     if (pos < NHS) hs_entry(pos, score, rk);
+    music_stop();
 }

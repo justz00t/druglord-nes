@@ -64,6 +64,10 @@ The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main l
 The font is the IBM PC 8x8 font, so tile numbers are DOS characters (tile + 0x80 is the inverted glyph, used as highlight; tiles 8-12 are the block and shade characters).
 PRG bank 2 holds three 4 KB tile sets: the game's (pattern table 0), the title's (the font plus the logo tiles built from `tools/title_art.bin`, the DOS `titleArt` data) and the end scene's (the font plus the picture tiles from `tools/end_scene.bin` and `tools/gun_sprite.bin`, the stacks of money and the pistol); the last two are loaded into pattern table 1 as needed (`load_pt1`).
 
+## Victory tune
+
+After a win, the initials screen plays an original victory tune (`victory.c`: C major, about 138 BPM, a 4-bar loop on all four channels), and it carries on into the high score table that follows. The table never plays it when it is reached any other way (the title screen's attract mode, the end of a game). The tune's code and data live in PRG bank 2 with the other song data and are called through the bank trampoline.
+
 ## Easter egg
 
 Sell **more than 100 cocaine in one sale** and the main-screen music changes to the easter-egg song for the rest of that game (until you win, die or quit; a new game starts with the normal music again). The debug ROM's "Coke+200" entry gives you enough cocaine to try it.

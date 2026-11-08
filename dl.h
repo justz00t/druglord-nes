@@ -206,3 +206,7 @@ void sound_test(void);
 void dbg_wait_release(void);
 void debug_menu(void);
 #pragma wrapped-call (pop)
+#pragma wrapped-call (push, bankcall, 2)
+void vic_start(void);   /* victory.c, PRG bank 2: the victory tune */
+void vic_frame(void);
+#pragma wrapped-call (pop)

@@ -63,3 +63,12 @@ The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main l
 `tools/mkdata.py` creates the tiles (`chr.bin`), the title data (`title.h`), the music tables (`music.h`) and the score tables (`tables.h`).
 The font is the IBM PC 8x8 font, so tile numbers are DOS characters (tile + 0x80 is the inverted glyph, used as highlight; tiles 8-12 are the block and shade characters).
 PRG bank 2 holds three 4 KB tile sets: the game's (pattern table 0), the title's (the font plus the logo tiles built from `tools/title_art.bin`, the DOS `titleArt` data) and the end scene's (the font plus the picture tiles from `tools/end_scene.bin` and `tools/gun_sprite.bin`, the stacks of money and the pistol); the last two are loaded into pattern table 1 as needed (`load_pt1`).
+
+## Easter egg
+
+Sell **more than 100 cocaine in one sale** and the main-screen music changes to the easter-egg song for the rest of that game (until you win, die or quit; a new game starts with the normal music again). The debug ROM's "Coke+200" entry gives you enough cocaine to try it.
+
+The song comes from a MIDI file, converted at build time by `tools/mid2nes.py` (a generic import: at every 16th note the lowest sounding note below middle G goes to the triangle, the highest two others to the pulses, the drum channel is ignored and the game adds its own beat; the first tempo is used; the song loops, and is cut at a bar line if it is too long for the 3.5 KB it has in PRG bank 2).
+
+* `tools/easter_default.mid` is an original placeholder tune.
+* To use your own song, save it as **`tools/easter_local.mid`** and run `./build.sh`. That file, and the generated `easter.bin`, are in `.gitignore`, so they stay on your machine. The ROM you build then contains your song: keep that ROM to yourself (don't commit it).

@@ -3,3 +3,7 @@
 .segment "FONT"
 _NESfont:
 .incbin "chr.bin"
+; the easter-egg song (tools/mid2nes.py), in the 4 KB after the tile sets
+.export _EasterSong
+_EasterSong:
+.incbin "easter.bin"

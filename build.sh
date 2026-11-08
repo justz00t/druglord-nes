@@ -6,6 +6,7 @@ set -e
 cd "$(dirname "$0")"
 python3 -I tools/mkdata.py
 python3 -I tools/menu_song.py
+python3 -I tools/mid2nes.py
 build() {   # $1 = output, $2.. = extra defines
     out=$1; shift
     ca65 -t nes -o $B/crt0.o crt0.s

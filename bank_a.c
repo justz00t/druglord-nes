@@ -381,6 +381,8 @@ u8 menu_sell(void) {
         inv[d] -= (i16)qty;
         cash += qty * price[d];
         sfx(4);
+        /* the easter egg: over 100 cocaine in one sale switches the main-screen music for the rest of the game */
+        if (d == 0 && qty > 100 && !easter_on) { easter_on = 1; easter_music_start(); }
     }
     return 1;
 }

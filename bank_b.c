@@ -7,6 +7,7 @@
 
 void init_game(void) {
     u8 i;
+    easter_on = 0;                                       /* the easter egg lasts one game */
     for (i = 0; i < NUM_DRUGS; i++) { inv[i] = 0; basis[i] = 0; }
     for (i = 0; i < 10; i++) done[i] = 0;
     gen_prices();                                        /* (uses the previous city, as the original does) */
@@ -357,7 +358,7 @@ const char* const dbg_name[] = {
     "Cop fight", "Cops", "Cheap", "Bust", "Factory",
     "Brownies", "Mug 1", "Mug 2", "Mug 3", "Coat",
     "Guns", "Blackmail", "Thugs", "Death", "Win",
-    "Replay", "Notice", "Credit", "Title", "Sounds", "Scores", "Entry", "ClrHi"};
+    "Replay", "Notice", "Credit", "Title", "Sounds", "Scores", "Entry", "ClrHi", "Coke+200"};
 void debug_menu(void) {
     u8 i;
     i16 s = 0;
@@ -396,6 +397,7 @@ void debug_menu(void) {
         case 20: hs_show(0xFF); break;
         case 21: hs_entry(hs_place(777777UL), 777777UL, 6); break;
         case 22: hs_reset(); break;
+        case 23: inv[0] += 200; if (hold < 400) hold = 400; break;   /* enough cocaine to try the easter egg */
         }
         dead = 0;
         if (health <= 0) health = 100;

@@ -46,9 +46,11 @@ typedef uint32_t u32;
 #define START_Y 21         /* "PRESS START" on the title screen */
 extern unsigned char m_loops;   /* times the title tune has played through */
 void menu_music_start(void);
+void easter_music_start(void);
+extern u8 easter_on;
 #define LOGO_Y 10          /* first row of the logo: rows 10-15 lie in attribute rows of their own (rows 8-15) */
 #define SND_COUNT 18
-#define DBG_COUNT 23
+#define DBG_COUNT 24
 
 /* ---- shared state (defined in druglord.c) ---- */
 extern volatile u8 latch;

@@ -1,0 +1,4 @@
+# your own easter-egg song: stays on your machine (tools/mid2nes.py uses it in place of easter_default.mid)
+tools/easter_local.mid
+# generated at build time from the easter-egg MIDI (it would contain your local song)
+easter.bin

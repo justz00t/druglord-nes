@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Writes menu.h: the main-menu music ("boom bap", 90 BPM, C minor), played by menu_frame() in druglord.c.
-One bar = 16 steps of 11/9 frames (swung 16ths at 90 BPM).  The bass, the chord stabs and the hook repeat every
+"""Writes menu.h: the main-menu music ("boom bap", 104 BPM, C minor), played by menu_frame() in druglord.c.
+One bar = 16 steps of 9/8/9/8/10/8 frames (lightly swung 16ths at 104 BPM; the timing is in druglord.c).  The bass, the chord stabs and the hook repeat every
 4 bars (64 steps); the hook only plays in bars 5-8.  The drums repeat every 2 bars (32 steps)."""
 import os
 here = os.path.dirname(os.path.abspath(__file__)); out = os.path.dirname(here)

@@ -228,6 +228,40 @@ static void siren(void) {
     }
 out:;
 }
+/* the EXTRA! sting: a news-wire xylophone.  Quick taps on one note in a teletype rhythm (pulse 2), higher accents
+ * on pulse 1 (the music is off on these screens), a little noise tick for each mallet, and a two-note hit at the end.
+ * xs_gap = frames to the next tap; xs_acc = 0 a tap, 1 an accent a fifth up, 2 an accent an octave up, 3 the end. */
+static const u8 xs_gap[] = {5,5,10,5,5,5,15, 5,5,10,5,10,5,15, 5,5,5,5,10,5,5,15, 5,5,10,5,5,5,5,5,20, 0};
+static const u8 xs_acc[] = {0,0,1,0,0,0,2,  0,0,0,1,0,0,2,  0,0,0,0,1,0,0,2,  0,0,1,0,2,0,1,0,3,  3};
+static void news_sting(void) {
+    u8 i = 0, w = 0, v1 = 0, v2 = 0, f = 0;
+    APU(0x04) = 0x70; APU(0x00) = 0x70;
+    for (;;) {
+        if (w == 0) {
+            u8 a = xs_acc[i];
+            if (a == 3) {                                   /* the end: E6 and the octave, ringing */
+                p2hi = p1hi = 0xFF; p2(HZ(1319)); p1(HZ(2637)); v1 = v2 = 15;
+                for (f = 0; f < 50; f++) {
+                    APU(0x04) = 0x70 | v2; APU(0x00) = 0x70 | v1;
+                    if ((f & 3) == 3) { if (v1) v1--; if (v2) v2--; }
+                    if (tick()) break;
+                }
+                break;
+            }
+            p2hi = 0xFF; p2(HZ(1319)); v2 = 13;              /* the tap: E6 */
+            if (a) { p1hi = 0xFF; p1(a == 1 ? HZ(1976) : HZ(2637)); v1 = 14; }   /* B6 or E7 */
+            APU(0x0E) = 0x82; APU(0x0F) = 0x08; APU(0x0C) = 0x34;
+            w = xs_gap[i++];
+        }
+        APU(0x04) = 0x70 | v2; APU(0x00) = 0x70 | v1;
+        if (v2) v2 = v2 > 2 ? v2 - 2 : 0;
+        if (v1) v1 = v1 > 1 ? v1 - 1 : 0;
+        APU(0x0C) = 0x30;
+        w--;
+        if (tick()) break;
+    }
+    APU(0x00) = 0x30;
+}
 void sfx(u8 n) {
     u8 i;
     ppu_show();
@@ -238,7 +272,7 @@ void sfx(u8 n) {
     case 4: noi(0, 8, 2); for (i = 0; i < 2; i++) { pluck(HZ(2093), 4); pluck(HZ(2637), 4); } pluck(HZ(3136), 14); break;   /* deal: "cha-ching" */
     case 5: siren(); break;                                                              /* police siren */
     case 6: pluck(HZ(784), 5); pluck(HZ(988), 5); pluck(HZ(1175), 5); pluck(HZ(1568), 16); break;        /* news: a short fanfare */
-    case 7: for (i = 0; i < 3; i++) { slide(HZ(300), HZ(1800), 0x7C, 8); } pluck(HZ(1760), 12); break;  /* EXTRA!: three whoops */
+    case 7: news_sting(); break;                                                         /* EXTRA!: the news-wire xylophone */
     case 8: noi(6, 12, 6); slide(HZ(300), HZ(60), 0xBE, 8); break;                           /* hit: a thud */
     case 9: for (i = 0; i < 40; i++) { APU(0x0E) = 15 - (i >> 2); APU(0x0F) = 0x08; APU(0x0C) = 0x30 | (i < 32 ? 4 + (i >> 3) : 8 - (i & 7)); if (tick()) break; }   /* jet: engines spool up */
             APU(0x0C) = 0x30; break;
@@ -264,10 +298,12 @@ u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
 u8 m_unit, m_nv;                /* 64th-note count in the bar (the drums), noise volume */
 u8 m_loops;                     /* times the tune has played through since music_start() */
 u8 m_song;                      /* 0 = the title tune, 1 = the main-menu song (menu.h) */
-/* ---- the main-menu song: "boom bap" (tools/menu_song.py).  Swung 16ths of 11/9 frames; the triangle plays the
+/* ---- the main-menu song: "boom bap" (tools/menu_song.py), 104 BPM.  Swung 16ths (mn_len); the triangle plays the
  *      bass (and a pitch-drop "thump" under each kick), pulse 2 the chord stabs (a 4-note arpeggio, one note a
  *      frame), pulse 1 the hook in bars 5-8, the noise the drums. ---- */
-static u8 mn_step, mn_fl;                         /* step 0-127, frames left in it */
+static u8 mn_step, mn_fl, mn_sw;                  /* step 0-127, frames left in it, place in the swing pattern */
+/* step lengths: 52 frames per 6 steps = 104 BPM (90 BPM + 15%), still a little swung */
+static const u8 mn_len[6] = {9, 8, 9, 8, 10, 8};
 static u8 mn_tri, mn_tl, mn_thump;                /* bass note, frames left, kick thump frame (5 = none) */
 static u8 mn_chd, mn_sl, mn_stt;                  /* stab chord (0 = none), frames left, age */
 static u8 mn_hk, mn_hleft, mn_ht;                 /* hook note, frames left, age */
@@ -277,7 +313,7 @@ static void mn_noise(u8 v, u8 i, u8 md) { if (v >= mn_nv) { mn_nv = v; mn_ni = i
 void menu_music_start(void) {
     music_stop();
     APU(0x15) = 0x0F; APU(0x01) = 0x08; APU(0x05) = 0x08;
-    mn_step = 127; mn_fl = 1; mn_tl = 0; mn_thump = 5; mn_sl = 0; mn_hleft = 0; mn_nv = 0;
+    mn_step = 127; mn_fl = 1; mn_sw = 0; mn_tl = 0; mn_thump = 5; mn_sl = 0; mn_hleft = 0; mn_nv = 0;
     m_song = 1; pend = 0; music_on = 1;
 }
 static void menu_frame(void) {
@@ -285,11 +321,11 @@ static void menu_frame(void) {
     u16 p;
     if (--mn_fl == 0) {                            /* a new step */
         if (++mn_step >= 128) mn_step = 0;
-        mn_fl = (mn_step & 1) ? 9 : 11;
+        mn_fl = mn_len[mn_sw]; if (++mn_sw >= 6) mn_sw = 0;
         x = mn_step & 63;
-        if (mn_bn[x]) { mn_tri = mn_bn[x]; mn_tl = mn_bl[x] * 10 - 1; }
-        if (mn_st[x]) { mn_chd = mn_st[x]; mn_sl = 19; mn_stt = 0; }
-        if (mn_step >= 64 && mn_hn[x]) { mn_hk = mn_hn[x]; mn_hleft = mn_hl[x] * 10 - 1; mn_ht = 0; }
+        if (mn_bn[x]) { mn_tri = mn_bn[x]; mn_tl = mn_bl[x] * 9 - 1; }
+        if (mn_st[x]) { mn_chd = mn_st[x]; mn_sl = 16; mn_stt = 0; }
+        if (mn_step >= 64 && mn_hn[x]) { mn_hk = mn_hn[x]; mn_hleft = mn_hl[x] * 9 - 1; mn_ht = 0; }
         d = mn_dr[mn_step & 31];
         if (d & 3) mn_noise(13, 13, 0);
         if (d & 1) mn_thump = 0;

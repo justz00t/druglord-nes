@@ -254,10 +254,39 @@ static void big_step(u8 w, u8 h, u8 col) {
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = col;
     ppu_show();                                       /* on again, in vblank */
 }
-/* the sound for each flash of DRUGLORD!!! (f = 0..4) */
-static void druglord_sfx(u8 f) {
-    static const u16 n[5] = {HZ(523), HZ(659), HZ(784), HZ(1047), HZ(1319)};
-    snd(n[f], 6);
+/* the DRUGLORD!!! fanfare, after the recording that asked for it: seven notes in two phrases (four climbing to a
+ * long top note, then two quick pickups back up to it), the text flashing on with each note.  Pulse 1 plays the
+ * tune (50% duty), pulse 2 the octave below (25%, quieter), the triangle a low root under the long notes; the long
+ * notes get vibrato.  Timing in frames, from the recording: 10 10 14 24 / 10 8 27. */
+static const u16 ff_hz[7] = {554, 659, 880, 1175, 932, 1109, 1175};   /* C#5 E5 A5 D6 / Bb5 C#6 D6 */
+static const u8 ff_len[7] = {10, 10, 14, 24, 10, 8, 27};
+static void druglord_fanfare(void) {
+    u8 i, t, v, len, on;
+    u16 p;
+    APU(0x15) = 0x0F; APU(0x01) = 0x08; APU(0x05) = 0x08;
+    for (i = 0; i < 7; i++) {
+        len = ff_len[i];
+        p = (u16)(111860UL / ff_hz[i]);
+        p1(0x7FF); p2(0x7FF);                         /* new note: make p1()/p2() rewrite the high byte */
+        for (t = 0; t < len; t++) {
+            on = (i == 6) || t + 3 < len;             /* off for the last 3 frames of a note: the flash */
+            wait_vblank(); frames++;
+            latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = on ? 0x30 : 0x0F;
+            PPUADDR = 0x3F; PPUADDR = 0; PPUADDR = 0; PPUADDR = 0;
+            PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+            v = t / 3; v = v < 5 ? 13 - v : 8;        /* a bright attack settling to a held level */
+            if (i == 6 && t > 18) v = 8 - (t - 18);   /* the last note dies away */
+            {
+                u16 q = p;
+                if (len > 20 && t > 8) { if ((t / 3) & 1) q += p >> 7; else q -= p >> 7; }   /* vibrato */
+                APU(0x00) = 0xB0 | v; p1(q);
+                APU(0x04) = 0x70 | (v > 4 ? v - 4 : 0); p2(q * 2 + 1);
+            }
+            if (len > 20) { u16 tp = (u16)(111860UL / (ff_hz[6] / 4)); APU(0x08) = 0xFF; APU(0x0A) = tp & 255; APU(0x0B) = tp >> 8; }
+            else APU(0x08) = 0x80;
+        }
+    }
+    APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80;
 }
 void show_win(void) {
     i16 pct = 0;
@@ -267,14 +296,8 @@ void show_win(void) {
     music_stop();
     for (f = 0; f < 11; f++) big_g[f] = big_idx(big_text[f]) * 8;
     big_step(27, 3, 0x0F);                            /* drawn while black */
-    for (f = 0; f < 5; f++) {
-        vb_pal(0x01, 0x30);                           /* on, with the sound */
-        druglord_sfx(f);
-        cr_wait(16);
-        vb_pal(0x01, 0x0F);                           /* off */
-        cr_wait(8);
-    }
-    vb_pal(0x01, 0x30); cr_wait(40);
+    druglord_fanfare();                               /* the fanfare, flashing the text on each note */
+    cr_wait(40);
     if (total_deals != 0) pct = (i16)(good_deals * 100) / total_deals;
     score = score_calc(cash + bank - debt, pct);
     while (rk < 10 && rank_thr[rk] <= score) rk++;

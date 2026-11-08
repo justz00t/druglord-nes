@@ -407,15 +407,14 @@ void credits_screen(void) {
     cr_wait(120);
 }
 
-/* ---- the title screen: the DOS logo and PRESS START, nothing else.  The logo is white; a red snake crawls
+/* ---- the title screen: the DOS logo and PRESS START, nothing else.  The logo is blue; a red snake crawls
  *      across it and back (a bright red head, its tail fading to pink), then the whole logo flashes
- *      red, white, red, white, and the snake sets off again.  The snake moves by changing the logo's attribute
+ *      red, blue, red, blue, and the snake sets off again.  The snake moves by changing the logo's attribute
  *      bytes (one 16-pixel column at a time); the four palettes are fixed:
- *        0: white face   (the logo, and the text)     1: bright red (the head)
+ *        0: blue face, white text                    1: bright red (the head)
  *        2: lighter red  (the tail)                   3: pink       (the tip of the tail)
- *      Each face is a checker of colours 1 and 3 (from the DOS shade character; both the same here, so the faces
- *      are solid), shadow colour 2.  Each part of the snake is two columns (32 pixels) long. ---- */
-static const u8 title_pal[16] = {0x0F, 0x30, 0x00, 0x30,  0x0F, 0x16, 0x00, 0x16,  0x0F, 0x26, 0x00, 0x26,  0x0F, 0x36, 0x00, 0x36};
+ *      The faces are colour 3 and the text colour 1 (the same in the snake's palettes), shadow colour 2.  Each part of the snake is two columns (32 pixels) long. ---- */
+static const u8 title_pal[16] = {0x0F, 0x30, 0x00, 0x12,  0x0F, 0x16, 0x00, 0x16,  0x0F, 0x26, 0x00, 0x26,  0x0F, 0x36, 0x00, 0x36};
 static u8 logo_q[16];                /* the palette of each 16-pixel column of the logo */
 void title_screen(void) {
     u8 x, y;
@@ -477,7 +476,7 @@ void title_wait(void) {
             /* one step of the logo animation */
             if (++t >= (flash ? FLASH_TIME : SNAKE_SPEED)) {
                 t = 0;
-                if (flash) {                                     /* red, white, red, white, then the snake */
+                if (flash) {                                     /* red, blue, red, blue, then the snake */
                     if (++flash > 4) { flash = 0; h = 0; dir = 1; snake(h, dir); }
                     else { for (e = 0; e < 16; e++) logo_q[e] = (flash & 1) ? 1 : 0; }
                 } else {

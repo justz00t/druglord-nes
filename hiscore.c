@@ -167,16 +167,8 @@ static void entry_letters(char* nm, u8 cur) {
     u8 i;
     for (i = 0; i < 3; i++) put2(12 + i * 3, 15, (u8)nm[i], 12 + i * 3, 16, i == cur ? '^' : ' ');   /* the ^ marks the letter */
 }
-/* "You made place N of 10" in yellow: drawn with the colour-2 copies of its glyphs (title.h) */
-static void y2_line(u8 pos) {
-    static const char t1[] = "You made place ", t2[] = " of 10";
-    const char* s;
-    u8 i;
-    at(5, 5);
-    for (s = t1; *s; s++) pc(y2_tile(*s));
-    if (pos + 1 >= 10) { pc(y2_tile('1')); pc(y2_tile('0')); } else pc(y2_tile('1' + pos));
-    for (s = t2; *s; s++) pc(y2_tile(*s));
-}
+/* yellow text: drawn with the colour-2 copies of its glyphs (y2.h, in the title tile set) */
+static void y2_ps(const char* s) { for (; *s; s++) pc(y2_tile(*s)); }
 void hs_entry(u8 pos, u32 score, u8 rk) {
     char nm[3];
     u8 cur = 0, e, rep = 0, f = 0, go = 0;
@@ -185,9 +177,10 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
     /* palettes: 0 white (the text), 1 the title pulsing light red to dark red, 2 blue (the initials and the
      * cursor), 3 green (the instructions) */
     ink = 1; ps_at(6, 1, "NEW  HIGH  SCORE!!!");
-    ink = 0; y2_line(pos);
-    ps_at(5, 8, "SCORE"); at(12, 8); pn((i32)score);
-    ps_at(5, 10, "RANK"); at(12, 10); ps(rank_name[rk]);
+    ink = 0;
+    ps_at(5, 5, "You made place "); pn(pos + 1); ps(" of 10");   /* white */
+    at(5, 8); y2_ps("SCORE"); at(12, 8); ltoa_s((i32)score); y2_ps(nb);   /* the score and rank in yellow */
+    at(5, 10); y2_ps("RANK"); at(12, 10); y2_ps(rank_name[rk]);
     ps_at(6, 13, "ENTER YOUR INITIALS");
     ink = 2; ps_at(12, 15, "A  A  A");
     colour_rows(16, 17, 2);                              /* the cursor row too */

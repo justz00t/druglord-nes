@@ -18,12 +18,12 @@ def glyph(t, col=1, inv=False):
     return bytes(g if col & 1 else bytes(8)) + bytes(g if col & 2 else bytes(8))
 t0 = b''.join(glyph(t & 0x7F, 1, t >= 128) for t in range(256))
 
-# logo: 6 rows x 62 cells of (char, attr); shade = the letter face (a checker of colours 1 and 3),
+# logo: 6 rows x 62 cells of (char, attr); shade = the letter face (colour 3),
 # full/half blocks = the shadow (colour 2).  One blank cell in front centres it (63 cells -> 32 tiles).
 art = open(os.path.join(here, 'title_art.bin'), 'rb').read()
 cells = [[0x20] + [art[(r*62 + c)*2] for c in range(62)] + [0x20] for r in range(6)]
 def cell_px(ch, x, y):          # colour of pixel (x 0..3, y 0..7) of one cell
-    if ch == 0xB1: return 1 if (x + y) & 1 else 3
+    if ch == 0xB1: return 3                # the face: solid colour 3 (the text uses colour 1, so the two can differ)
     if ch == 0xDB: return 2
     if ch == 0xDC: return 2 if y >= 4 else 0
     if ch == 0xDF: return 2 if y < 4 else 0
@@ -56,7 +56,10 @@ for ch in BIG:
             t1 += tile_bytes([[px[ty*8 + y][tx*8 + x] for x in range(8)] for y in range(8)])
     big2.append(base)
 # glyphs in colour 2 for the initials screen's "You made place N of 10" line (yellow on palette 0 there)
-Y2 = 'Youmadeplcf0123456789'
+RANKS = ['Loser!', 'Dopehead', 'Peddler', 'Pusher', 'Gangster', 'Dealer', 'Trafficker', 'Racketeer', 'Marketeer',
+         'Entrepreneur', 'DRUGLORD']            # the rank names (druglord.c rank_name), shown in yellow
+Y2 = ''.join(sorted(set('SCORE RANK -0123456789' + ''.join(RANKS)) - {' '}))
+assert len(Y2) <= 256 - len(t1) // 16, 'the yellow glyphs do not fit the title tile set'
 y2_base = len(t1) // 16
 for ch in Y2: t1 += glyph(ord(ch), 2)
 quad_base = len(t1) // 16

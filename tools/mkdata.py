@@ -196,8 +196,8 @@ def emit_tune(prefix, voices, div, tempo, unit_div, bars, o):
     D.append(gap); AB.append(0); C.append(0)
     o.write('#define %s_EVENTS %d\n' % (prefix, len(D)))
     o.write('#define %s_RATE %d   /* time units per frame, 8.8 fixed point */\n' % (prefix, rate))
-    o.write('static const unsigned short %s_pp[] = {0, %s};\n' % (prefix.lower(), ', '.join(str(per_p(k)) for k in notes)))
-    o.write('static const unsigned short %s_tp[] = {0, %s};\n' % (prefix.lower(), ', '.join(str(per_t(k)) for k in notes)))
+    o.write('static const u16 %s_pp[] = {0, %s};\n' % (prefix.lower(), ', '.join(str(per_p(k)) for k in notes)))
+    o.write('static const u16 %s_tp[] = {0, %s};\n' % (prefix.lower(), ', '.join(str(per_t(k)) for k in notes)))
     for nm, arr in (('d', D), ('ab', AB), ('c', C)):
         o.write('static const unsigned char %s_%s[%s_EVENTS] = {%s};\n' % (prefix.lower(), nm, prefix, ','.join(map(str, arr))))
     print(prefix, 'events', len(D), 'notes', len(notes), 'rate', rate)
@@ -251,7 +251,7 @@ with open(os.path.join(out, 'tables.h'), 'w') as o:
     z = 0
     while dd[z] == 0: z += 1
     o.write('#define SCORE_DEALS_Z %d\n' % z)
-    o.write('static const unsigned short score_deals_d[%d] = {%s};\n' % (100 - z, ','.join(str(d) for d in dd[z:])))
+    o.write('static const u16 score_deals_d[%d] = {%s};\n' % (100 - z, ','.join(str(d) for d in dd[z:])))
     # score part 1: floor(2^(total/10e6)) for total >= 10e6*log2(k): thresholds for k = 2..10
     o.write('static const unsigned long score_wealth[9] = {%s};\n' % ','.join('%dUL' % math.ceil(1e7*math.log2(k)) for k in range(2, 11)))
     o.write('#endif\n')

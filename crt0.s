@@ -1,5 +1,5 @@
 ; Start-up code for the NES port: mapper 2 (UxROM), 128 KB PRG, 8 KB CHR-RAM, 8 KB battery-backed WRAM at $6000.
-;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = the music, bank 4 = the high scores (hiscore.c), banks 5-6 = free, bank 7 = fixed (this file, the runtime,
+;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = the music, bank 4 = the high scores (hiscore.c), bank 5 = the cop fight (fight.c), bank 6 = free, bank 7 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
         .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count, _ppu_copy

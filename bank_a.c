@@ -1,168 +1,7 @@
-/* PRG bank 0: cop fight, random events, the menus */
+/* PRG bank 0: random events, the menus */
 #include "dl.h"
 #define TBL_COAT
 #include "tables.h"
-
-/* ======================================================================== */
-/*  Cop fight                                                               */
-/* ======================================================================== */
-i16 php[10], chp[12];
-void fight_row(u8 side, u8 i, i16 hp) {
-    u8 x = side ? 17 : 1, y = 4 + i;
-    at(x, y);
-    if (!side) { if (i == 0) ps_pad("You", 8); else { ps("Mate "); pn_l(i, 3); } }
-    else { ps("Cop "); pn_l(i + 1, 4); }
-    at(x + 9, y);
-    if (hp > 0) pn_l(hp, 4); else ps("dead");
-}
-void fight_msg(const char* s) { fill(1, 22, ' ', 30); fill(1, 23, ' ', 30); at(1, 22); ink = 2; ps(s); ink = 0; }
-
-void cop_fight(void) {
-    i16 choice, nf = 0, nc, ct, shots = 1, i, t, copsAlive, partyAlive, result = 0, att, si;
-    u8 k;
-    cop_flag = 0;
-    if (gun_type >= 4) shots = 3;
-    page();
-    ink = 2; ps_at(1, 1, "The cops are on your tail!!!");
-    sfx(5);
-    ink = 3; ps_at(1, 3, "Do you wanna");
-    ps_at(3, 4, "Go at it alone");
-    ps_at(3, 5, "Call a friend (1 status pt.)");
-    ps_at(3, 6, "Call a posse (5 status pts.)");
-    for (;;) {
-        choice = choose(1, 4, 3, 0);
-        if (choice < 0) continue;
-        choice++;
-        if ((choice == 2 && status == 0) || (choice == 3 && status < 5)) {
-            ink = 2; ps_at(1, 8, "You don't have enough points!");
-            sfx(3); delay(90);
-            fill(1, 8, ' ', 30);
-            continue;
-        }
-        break;
-    }
-    if (choice == 2) { nf = 1; status--; }
-    else if (choice == 3) {
-        nf = rnd() % 4 + status / 100 + 4;
-        if (nf > 8) nf = 8;
-        status -= 5;
-    }
-    clear_screen();
-    ink = 2; ps_at(2, 1, "* * *  D R U G L O R D  * * *");
-    ink = 1; ps_at(1, 3, "YOU"); ps_at(17, 3, "COPS");
-    ink = 0;
-    php[0] = health;
-    for (i = 1; i <= nf; i++) php[i] = rnd() % 10 + dice(10, status / 50) + 25;
-    /* how many cops and what gun they carry (re-rolled until the gun type is 2 or 3) */
-    for (;;) {
-        nc = rnd() % 8 + 3;
-        ct = status / (nc * 2);
-        if (rnd() % 20 == 0) {
-            if (ct < 2) {
-                ct = status / (rnd() % 4 + 1);
-                if (ct > 3) ct = 3;
-                if (ct < 2) ct = 2;
-            } else {
-                nc = rnd() % 3 + 8;
-                ct = 3;
-            }
-            break;
-        }
-        if (ct >= 2 && ct <= 3) break;
-    }
-    for (i = 0; i < nc; i++) chp[i] = dice(15, 2) + 15;
-    copsAlive = nc; partyAlive = nf + 1;
-    for (i = 0; i <= nf; i++) fight_row(0, i, php[i]);
-    for (i = 0; i < nc; i++) fight_row(1, i, chp[i]);
-    at(1, 16); ps("Guns: "); pn(num_guns); ps(" "); ps(gun_name[gun_type]);
-    at(1, 17); ps("Cops: "); ps(gun_name[ct]);
-    for (;;) {
-        fill(1, 20, ' ', 30);
-        ink = 0; ps_at(1, 20, "(F)ight or (R)un?  A=F B=R");
-        for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
-        if (k & BTN_B) {                                 /* run */
-            fight_msg("You take off running...");
-            delay(60);
-            if (rnd() % 10 + nc / 3 < rnd() % 10 + nf / 3) {
-                fight_msg("and ya got away!!!"); health = php[0]; result = 1;
-            } else { fight_msg("and ya didn't get away!!!"); result = 2; k = BTN_A; }
-            delay(60);
-        }
-        if (k & BTN_A) {                                 /* fight */
-            if (result != 2) {
-                for (si = 0; si <= nf; si++) {
-                    if (php[si] == 0) continue;
-                    att = 0;
-                    for (;;) {
-                        do { t = rnd() % nc; } while (chp[t] == 0);
-                        sfx(gun_type + 10);
-                        fill(1, 22, ' ', 30); at(1, 22); ink = 2;
-                        ps(si < num_guns ? "Firing at cop " : "Punching cop "); pn(t + 1);
-                        if (rnd() % 2 == 0) {
-                            ps(" *Hit!*"); sfx(8);
-                            chp[t] -= (si < num_guns) ? dice(6, gun_dice[gun_type]) : dice(4, 1);
-                            if (chp[t] <= 0) { chp[t] = 0; copsAlive--; }
-                        } else ps(" -Missed-");
-                        fight_row(1, t, chp[t]);
-                        delay(14);
-                        att++;
-                        if (php[0] != 0 && copsAlive != 0 && gun_type > 3 && att < shots && si < num_guns) continue;
-                        break;
-                    }
-                    if (copsAlive == 0) break;
-                }
-            }
-            if (copsAlive != 0) {
-                result = 0;
-                for (si = 0; si < nc; si++) {
-                    if (chp[si] == 0) continue;
-                    do { t = rnd() % (nf + 1); } while (php[t] == 0);
-                    sfx(ct + 10);
-                    fill(1, 22, ' ', 30); at(1, 22);
-                    ps("Cop "); pn(si + 1); ps(" shoots at "); if (t == 0) ps("you"); else { ps("mate "); pn(t); }
-                    if (rnd() % 2 == 0) {
-                        ps(" *Hit!*"); sfx(8);
-                        php[t] -= dice(6, gun_dice[ct]);
-                        if (php[t] <= 0) { status--; php[t] = 0; partyAlive--; }
-                    } else ps(" -Missed-");
-                    fight_row(0, t, php[t]);
-                    delay(14);
-                    if (php[0] == 0 || partyAlive == 0) break;
-                }
-            }
-        }
-        if (!(copsAlive > 0 && partyAlive > 0 && php[0] > 0 && result != 1)) break;
-    }
-    if (result == 1) { delay(60); return; }
-    health = php[0];
-    if (health == 0) { dead = 1; return; }
-    fight_msg("Yous wasted 'em!!! Way ta go, man!!!");
-    delay(60);
-    {
-        u8 sell = 1;
-        if (!(ct < gun_type && nc <= num_guns)) {
-            fill(1, 24, ' ', 30);
-            ps_at(1, 24, nc == 1 ? "Take his gun, man? (Y/N)" : "Take their guns, man? (Y/N)");
-            ink = 1; ps_at(1, 26, "A = Yes     B = No");
-            for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
-            if (k & BTN_A) {
-                fight_msg("You want 'em, you got 'em! What a bunch'a chumps!");
-                sell = 0;
-                if (gun_type == ct) num_guns += nc; else { gun_type = ct; num_guns = nc; }
-            } else { fight_msg("OK, man, it's yer call."); delay(90); }
-        }
-        if (sell) {
-            i32 gold = (i32)nc * ct * 200;
-            fill(1, 22, ' ', 30); fill(1, 23, ' ', 30);
-            at(1, 22); wx0 = 1; wx1 = 30; wy0 = 22; wy1 = 26;
-            sayc(3, "You sell the "); say_num(nc); say(" guns that were on the pigs you wasted for ");
-            say_num(gold); say(" bucks! This'll teach 'em not to mess with ya, huh?");
-            cash += gold; status += nc;
-            delay(200);
-        }
-    }
-    press_a();
-}
 
 /* ======================================================================== */
 /*  Other random events                                                     */
@@ -561,15 +400,23 @@ u8 menu_quit(void) {
 }
 
 /* the loan shark's thugs come for you */
+static void thug_hp(u8 label) {                         /* your health at the bottom of the page (the text cursor is kept) */
+    u8 sx = cx, sy = cy, si = ink;
+    if (label) { ink = 1; ps_at(16, 28, "Health:"); }
+    at(24, 28); hp_put(health, 100, 4, 0);
+    cx = sx; cy = sy; ink = si;
+}
 void thugs_scene(void) {
     u8 n;
     page();
     sayc(2, "You're ambushed in a dark alley by Guido's thugs, must be 'bout ten guys! The boss-man say \"Oh, man, you should'na missed de deadline, now me and boys are gonna have to break your legs! Maybe next time you'll learn, eh?\"\nDey take yous from all directions, you ain't gotta chance...\nOne steps out with a baseball bat and...\n");
     delay(120);
     thugs++;
+    thug_hp(1);                                          /* your health, in its colour, at the bottom */
     for (n = 0; n < thugs; n++) {
         sayc(2, "* * * C R A C K ! ! * * *\n");
         health -= 25; angry = 1;
+        thug_hp(0);
         sfx(17);
         delay(60);
     }

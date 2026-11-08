@@ -108,6 +108,7 @@ void ps(const char* s);
 void ps_at(u8 x, u8 y, const char* s);
 void ltoa_s(i32 v);
 void pn(i32 v);
+void hp_put(i16 hp, i16 max, u8 w, u8 dw);
 void pn_r(i32 v, u8 w);
 void pn_l(i32 v, u8 w);
 void ps_pad(const char* s, u8 w);
@@ -163,10 +164,7 @@ extern u8 pt1_set;
 void bankcall(void);
 void __fastcall__ bank_set(u8 b);
 #pragma wrapped-call (push, bankcall, 0)
-/* bank_a.c: cop fight, events, the menus */
-void fight_row(u8 side, u8 i, i16 hp);
-void fight_msg(const char* s);
-void cop_fight(void);
+/* bank_a.c: events, the menus */
 u8 market_event(u8 count, i16 mul_pct);
 void ev_cops_sell(void);
 void ev_cheap(void);
@@ -187,6 +185,12 @@ u8 menu_loan(void);
 u8 menu_hospital(void);
 u8 menu_quit(void);
 void thugs_scene(void);
+#pragma wrapped-call (pop)
+#pragma wrapped-call (push, bankcall, 5)
+/* fight.c, PRG bank 5: the cop fight */
+void fight_row(u8 side, u8 i, i16 hp);
+void fight_msg(const char* s);
+void cop_fight(void);
 #pragma wrapped-call (pop)
 #pragma wrapped-call (push, bankcall, 4)
 /* hiscore.c, PRG bank 4: the high-score table (kept in the battery-backed WRAM at $6000) */

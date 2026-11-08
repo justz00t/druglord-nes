@@ -16,7 +16,14 @@ def glyph(t, col=1, inv=False):
     g = bytearray(f[remap.get(t, t)*8:remap.get(t, t)*8+8])
     if inv: g = bytearray((~x) & 0xFF for x in g)
     return bytes(g if col & 1 else bytes(8)) + bytes(g if col & 2 else bytes(8))
-t0 = b''.join(glyph(t & 0x7F, 1, t >= 128) for t in range(256))
+t0 = bytearray(b''.join(glyph(t & 0x7F, 1, t >= 128) for t in range(256)))
+# 0x80-0x9F would be the inverted control characters, which are never shown: they hold the health colours instead
+#   0x80-0x89 the digits in colour 2, 0x8A-0x93 the digits in colour 3, 0x94-0x96 "d", "e", "a" in colour 2 ("dead"),
+#   0x97 the double line in colour 3 (the white line under the status block)
+extra = [glyph(ord(c), 2) for c in '0123456789'] + [glyph(ord(c), 3) for c in '0123456789'] + \
+        [glyph(ord(c), 2) for c in 'dea'] + [glyph(2, 3)]
+for i, g in enumerate(extra): t0[(0x80 + i) * 16:(0x81 + i) * 16] = g
+t0 = bytes(t0)
 
 # logo: 6 rows x 62 cells of (char, attr); shade = the letter face (colour 3),
 # full/half blocks = the shadow (colour 2).  One blank cell in front centres it (63 cells -> 32 tiles).

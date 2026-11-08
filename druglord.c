@@ -48,7 +48,9 @@ void clear_rows(u8 y0, u8 y1) {      /* inclusive */
     for (y = y0; y <= y1; y++) fill(0, y, ' ', 32);
 }
 void set_palette(void) {
-    static const u8 pal[16] = {0x0F, 0x30, 0x10, 0x00,  0x0F, 0x28, 0x18, 0x00,
+    /* 0: white text, colours 2-3 the health colours pink and light red; 1: yellow, colour 3 white (the line);
+     * 2: red, colour 2 dark red (health); 3: cyan */
+    static const u8 pal[16] = {0x0F, 0x30, 0x36, 0x26,  0x0F, 0x28, 0x18, 0x30,
                                0x0F, 0x16, 0x06, 0x00,  0x0F, 0x2C, 0x1C, 0x00};
     u8 i;
     ppu_off();
@@ -526,14 +528,30 @@ u8 yn(void) {                /* A = yes, B = no */
     }
 }
 
+/* a health value in its colour: white at full health, then pink, light red, red and dark red in steps of 25%
+ * (palette 0 colours 1-3, palette 2 colours 1-2; the digits in colours 2 and 3 are tiles 0x80-0x93).  w = the
+ * width to pad to; dw = show 0 as "dead" */
+void hp_put(i16 hp, i16 max, u8 w, u8 dw) {
+    u8 lv, base, l;
+    if (hp < 0) hp = 0;
+    lv = hp >= max ? 4 : (u8)((hp * 4 + max / 2) / max);
+    ink = lv >= 2 ? 0 : 2;
+    base = (lv == 3 || lv == 0) ? 0x80 - '0' : lv == 2 ? 0x8A - '0' : 0;
+    if (hp == 0 && dw) { pc(0x94); pc(0x95); pc(0x96); pc(0x94); l = 4; }
+    else { ltoa_s(hp); for (l = 0; nb[l]; l++) pc(nb[l] + base); }
+    ink = 0;
+    while (l++ < w) pc(' ');
+}
+
 /* ---- main screen ---- */
-/* the status block: labels in yellow (columns 1-7), values in white from column 8; drug names cyan, prices red */
+/* the status block: labels in yellow (columns 1-7), values in white from column 8 (health in its colour); drug names
+ * cyan, prices white */
 static void label(u8 y, const char* s) { ink = 1; ps_at(1, y, s); ink = 0; at(8, y); }
 void draw_status(void) {
     u8 i;
     space = hold;
     for (i = 0; i < NUM_DRUGS; i++) space -= inv[i];
-    label(2, "Status:"); pn_l(status, 7); ink = 1; ps_at(16, 2, "Health:"); ink = 0; at(24, 2); pn_l(health, 4);
+    label(2, "Status:"); pn_l(status, 7); ink = 1; ps_at(16, 2, "Health:"); ink = 0; at(24, 2); hp_put(health, 100, 4, 0);
     label(3, "Date:");
     { u8 y = year; pc('0' + month / 10); pc('0' + month % 10); pc('/');
       pc('0' + day / 10); pc('0' + day % 10); pc('/'); pc('0' + y / 10); pc('0' + y % 10); }
@@ -547,7 +565,7 @@ void draw_status(void) {
     label(9, "Guns:"); pn_l(num_guns, 3); ps_pad(gun_name[gun_type], 14);
     for (i = 0; i < NUM_DRUGS; i++) {
         ink = 3; at(2, ROW_DRUGS + i); ps_pad(drug_name[i], 8);
-        ink = 2; at(10, ROW_DRUGS + i); pc('$'); pn_r(price[i], 6);
+        ink = 0; at(10, ROW_DRUGS + i); pc('$'); pn_r(price[i], 6);
         ink = 0; at(17, ROW_DRUGS + i); pn_r(inv[i], 8);
     }
 }
@@ -555,10 +573,8 @@ void draw_main(void) {
     u8 x;
     clear_screen();
     set_palette();
-    ps_at(2, 1, "* * *  D R U G L O R D  * * *");
     ps_at(2, 11, "Drug       Price    Have");
-    for (x = 0; x < 32; x++) put(x, 10, 2);
-    colour_rows(0, 1, 2);
+    for (x = 0; x < 32; x++) put(x, 10, 0x97);          /* the double line, in white (palette 1 colour 3) */
     colour_rows(10, 11, 1);
     draw_status();
 }

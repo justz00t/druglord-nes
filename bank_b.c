@@ -75,14 +75,20 @@ u32 score_calc(i32 total, i16 pct) {
 static const u8 gun_x[10] = {20, 23, 26, 29, 0, 2, 5, 7, 10, 12};
 static const u8 gun_y[10] = {2, 5, 2, 5, 2, 5, 2, 5, 2, 5};
 /* write two tiles and one attribute byte during vblank (the screen stays on) */
-static void vb_bar(u8 x, u8 y) {
+/* give tile (x, y) palette 2 in the attribute shadow; returns the attribute byte's index */
+static u8 bar_attr(u8 x, u8 y) {
     u8 i = (y >> 2) * 8 + (x >> 2), sh = ((y & 2) ? 4 : 0) + ((x & 2) ? 2 : 0);
     attr[i] = (attr[i] & ~(3 << sh)) | (2 << sh);
-    if (((x + 1) >> 2) != (x >> 2)) { u8 j = i + 1; attr[j] = (attr[j] & ~(3 << sh)) | (2 << sh); }
+    return i;
+}
+static void vb_bar(u8 x, u8 y) {
+    /* a stack is two tiles wide: each tile gets palette 2 for its own 16-pixel block (the two tiles can lie in
+     * different blocks, and even in different attribute bytes) */
+    u8 i = bar_attr(x, y), j = bar_attr(x + 1, y);
     wait_vblank(); frames++;
     ppu_at(x, y); PPUDATA = bar_tiles[0]; PPUDATA = bar_tiles[1];
     PPUADDR = 0x23; PPUADDR = 0xC0 + i; PPUDATA = attr[i];
-    if (((x + 1) >> 2) != (x >> 2)) { PPUADDR = 0x23; PPUADDR = 0xC1 + i; PPUDATA = attr[i + 1]; }
+    if (j != i) { PPUADDR = 0x23; PPUADDR = 0xC0 + j; PPUDATA = attr[j]; }
     PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void end_scene(void) {
@@ -124,21 +130,23 @@ static const char* const end_line[18] = {
     "check dis out --", "", "   Cash in Hand:", "   Cash in Bank:", "  Still in Debt:", "     Good Deals:",
     "    Total Deals:", "         DEAL %:", "", "     Total Days:", "----------------  ----------", " OVERALL SCORE:", "          RANK:"};
 static i32 end_val[18];
+/* one line of the score list: 16 + 12 characters in columns 2-29, clear of the scroll arrows (30) and the frame (31) */
 static void end_row(u8 y, u8 n) {
     const char* s = end_line[n];
     u8 l = 0;
     at(2, y); ink = 3;                                /* palette 3 is the box's: white text on the scene */
+    if (n == 15) { ps("----------------  ----------"); return; }   /* the rule: exactly 28 */
     if (n == 13) { ps_pad(gun_name[gun_type], 13); ps("'s:"); l = 16; }
     else { while (*s) { pc((u8)*s++); l++; } }
-    while (l++ < 16) pc(' ');
-    if (n == 17) { ps_pad(rank_name[(u8)end_val[17]], 13); return; }
-    if ((n >= 7 && n <= 14 && n != 13) || n == 13 || n == 16) {
+    if (n == 17) { while (l < 16) { pc(' '); l++; } ps_pad(rank_name[(u8)end_val[17]], 12); return; }
+    if ((n >= 7 && n <= 14) || n == 16) {            /* a label (16) and a number (12, right-aligned) */
+        while (l < 16) { pc(' '); l++; }
         ltoa_s(end_val[n]);
         if (n == 12) { for (l = 0; nb[l]; l++) {} nb[l] = '%'; nb[l + 1] = 0; }
         for (l = 0; nb[l]; l++) {}
-        while (l++ < 13) pc(' ');
+        while (l++ < 12) pc(' ');
         ps(nb);
-    } else ps_pad("", 13);
+    } else while (l < 28) { pc(' '); l++; }          /* a line of the message: padded to 28, never longer */
 }
 static void end_box(u32 score, u8 rk) {
     u8 top = 0, i, e;

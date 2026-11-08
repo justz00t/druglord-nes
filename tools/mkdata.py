@@ -55,6 +55,10 @@ for ch in BIG:
         for tx in range(2):
             t1 += tile_bytes([[px[ty*8 + y][tx*8 + x] for x in range(8)] for y in range(8)])
     big2.append(base)
+# glyphs in colour 2 for the initials screen's "You made place N of 10" line (yellow on palette 0 there)
+Y2 = 'Youmadeplcf0123456789'
+y2_base = len(t1) // 16
+for ch in Y2: t1 += glyph(ord(ch), 2)
 quad_base = len(t1) // 16
 for q in range(16):            # bit 0 top left, 1 top right, 2 bottom left, 3 bottom right
     t1 += tile_bytes([[1 if q & (1 << ((y >> 2) * 2 + (x >> 2))) else 0 for x in range(8)] for y in range(8)])
@@ -138,6 +142,7 @@ with open(os.path.join(out, 'title.h'), 'w') as o:
     o.write('#define LOGO_W %d\n#define LOGO_H %d\n' % (LOGO_W, LOGO_H))
     o.write('static const unsigned char logo_map[LOGO_H * LOGO_W] = {%s};\n' % ','.join(map(str, logo_map)))
     o.write('#define BIG_CHARS "%s"\n#define BIG_QUAD %d\n' % (BIG, quad_base))
+    o.write('#define Y2_CHARS "%s"\n#define Y2_BASE %d\n' % (Y2, y2_base))
     o.write('static const unsigned char big2[%d] = {%s};          /* first of the 2x2 tiles of each */\n' % (len(BIG), ','.join(map(str, big2))))
     o.write('static const unsigned char big_glyph[%d] = {%s};     /* the 8x8 glyphs, a byte a row */\n' % (len(BIG) * 8, ','.join(str(b) for ch in BIG for b in f[ord(ch)*8:ord(ch)*8+8])))
 print('logo tiles', len(logo_tiles), 'title table', len(t1) // 16, 'tiles')

@@ -1,6 +1,7 @@
 /* PRG bank 1: the high score table (kept in the battery-backed RAM at $6000), the initials entry and the
  * high score screen. */
 #include "dl.h"
+#include "title.h"
 
 typedef struct { char n[3]; u8 rk; u32 sc; } hs_t;     /* 8 bytes: initials, rank number, score */
 #define HS    ((hs_t*)0x6010)
@@ -139,6 +140,12 @@ void hs_flash(void) {
     pal_default();
 }
 
+static u8 y2_tile(char c) {
+    u8 i;
+    if (c == ' ') return ' ';
+    for (i = 0; Y2_CHARS[i]; i++) if (Y2_CHARS[i] == c) return Y2_BASE + i;
+    return (u8)c;
+}
 /* the attract mode: the table for 2 seconds between plays of the title tune.  Returns 1 if START or A was pressed. */
 u8 hs_attract(void) {
     u8 f = 0, n, e;
@@ -158,7 +165,17 @@ u8 hs_attract(void) {
 /* ---- initials entry after a win ---- */
 static void entry_letters(char* nm, u8 cur) {
     u8 i;
-    for (i = 0; i < 3; i++) put2(12 + i * 3, 15, (u8)nm[i] | (i == cur ? 0x80 : 0), 12 + i * 3, 16, i == cur ? '^' : ' ');
+    for (i = 0; i < 3; i++) put2(12 + i * 3, 15, (u8)nm[i], 12 + i * 3, 16, i == cur ? '^' : ' ');   /* the ^ marks the letter */
+}
+/* "You made place N of 10" in yellow: drawn with the colour-2 copies of its glyphs (title.h) */
+static void y2_line(u8 pos) {
+    static const char t1[] = "You made place ", t2[] = " of 10";
+    const char* s;
+    u8 i;
+    at(5, 5);
+    for (s = t1; *s; s++) pc(y2_tile(*s));
+    if (pos + 1 >= 10) { pc(y2_tile('1')); pc(y2_tile('0')); } else pc(y2_tile('1' + pos));
+    for (s = t2; *s; s++) pc(y2_tile(*s));
 }
 void hs_entry(u8 pos, u32 score, u8 rk) {
     char nm[3];
@@ -168,7 +185,7 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
     /* palettes: 0 white (the text), 1 the title pulsing light red to dark red, 2 blue (the initials and the
      * cursor), 3 green (the instructions) */
     ink = 1; ps_at(6, 1, "NEW  HIGH  SCORE!!!");
-    ink = 0; ps_at(5, 5, "You made place "); pn(pos + 1); ps(" of 10");
+    ink = 0; y2_line(pos);
     ps_at(5, 8, "SCORE"); at(12, 8); pn((i32)score);
     ps_at(5, 10, "RANK"); at(12, 10); ps(rank_name[rk]);
     ps_at(6, 13, "ENTER YOUR INITIALS");
@@ -178,6 +195,9 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
     ps_at(2, 22, "A next / OK   B back");
     ps_at(2, 24, "START = done");
     ink = 0;
+    /* this screen uses the title's tile set (pattern table 1): the same font, plus the yellow glyphs */
+    load_pt1(1); bgctl = 0x10;
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x02; PPUDATA = 0x28;   /* palette 0, colour 2: yellow */
     ppu_show();
     vic_start();                                     /* the victory tune, on into the table that follows */
     entry_letters(nm, cur);

@@ -196,59 +196,61 @@ static void end_box(u32 score, u8 rk) {
     }
     ink = 0;
 }
-/* ---- "DRUGLORD!!!" grows with each flash until it fills the screen: normal size, double, 4x (the full width)
- *      and 8x ("DRUG" / "LORD" / "!!!", every glyph pixel a whole tile).  Each size is drawn with the screen off
- *      and the screen comes back on in vblank (no torn frames); the colour flashes are palette writes in vblank. ---- */
+/* ---- "DRUGLORD!!!" on one line, growing with each flash until it spans the screen edge to edge, the colour
+ *      going from white to dark red.  The letters for each size are drawn into pattern table 1 at run time
+ *      (scaled from the 8x8 glyphs, nearest pixel), with the screen off; the screen comes back on in vblank. ---- */
 static void vb_pal(u8 a, u8 v);
 static void cr_wait(u8 n);
+static const char big_text[] = "DRUGLORD!!!";
 static u8 big_idx(char c) { u8 i; for (i = 0; i < 7; i++) if (BIG_CHARS[i] == c) return i; return 0; }
-static void big_s2(u8 x, u8 y, const char* t) {      /* double size: 2x2 tiles a letter */
-    u8 b;
-    for (; *t; t++, x += 2) {
-        b = big2[big_idx(*t)];
-        ppu_at(x, y); PPUDATA = b; PPUDATA = b + 1;
-        ppu_at(x, y + 1); PPUDATA = b + 2; PPUDATA = b + 3;
+static u8 big_g[11];                                  /* offset of each letter's glyph in big_glyph */
+static u8 big_cb[256];                                /* [tile column * 8 + glyph row]: that column's 8 pixels */
+#define big_sx ((u8*)0x0200)                         /* the source column (0-87) of each screen pixel column:
+                                                      * borrows the credits' sprite page, unused by then */
+static u8 big_sy[24];                                 /* the glyph row (0-7) of each screen pixel row */
+/* draw the line w tiles wide and h tiles high, centred; tiles 1.. of pattern table 1 (tile 0 stays blank).
+ * The 6502 has no divide, so the scaling uses running counters instead of division. */
+static void big_line(u8 w, u8 h) {
+    u8 tx, ty, py, sy, b, k, x0, y0, t, sx, i;
+    u16 wp = (u16)w * 8, acc, px;
+    u8* cb;
+    for (px = 0, acc = 0, sx = 0; px < wp; px++) {     /* source column = px * 88 / wp */
+        big_sx[px] = sx;
+        acc += 88; while (acc >= wp) { acc -= wp; sx++; }
     }
-}
-static void big_s4(u8 x, u8 y, const char* t) {      /* 4x: 4x4 tiles a letter, each tile = 2x2 glyph pixels */
-    u8 r, c, q;
-    const u8* g;
-    for (; *t; t++, x += 4) {
-        g = big_glyph + big_idx(*t) * 8;
-        for (r = 0; r < 4; r++) {
-            ppu_at(x, y + r);
-            for (c = 0; c < 4; c++) {
-                q = 0;
-                if (g[r * 2] & (0x80 >> (c * 2))) q |= 1;
-                if (g[r * 2] & (0x40 >> (c * 2))) q |= 2;
-                if (g[r * 2 + 1] & (0x80 >> (c * 2))) q |= 4;
-                if (g[r * 2 + 1] & (0x40 >> (c * 2))) q |= 8;
-                PPUDATA = q ? BIG_QUAD + q : 0;
+    for (py = 0, i = 0, sy = 0; py < h * 8; py++) {    /* glyph row = py / h */
+        big_sy[py] = sy;
+        if (++i == h) { i = 0; sy++; }
+    }
+    cb = big_cb;
+    for (tx = 0; tx < w; tx++) {                      /* each tile column's bytes for the 8 glyph rows */
+        const u8* xs = big_sx + tx * 8;
+        for (sy = 0; sy < 8; sy++) {
+            b = 0;
+            for (k = 0; k < 8; k++) {
+                sx = xs[k];
+                if (big_glyph[big_g[sx >> 3] + sy] & (0x80 >> (sx & 7))) b |= 0x80 >> k;
             }
+            *cb++ = b;
         }
     }
-}
-static void big_s8(u8 x, u8 y, const char* t) {      /* 8x: every glyph pixel is a full block tile */
-    u8 r, c;
-    const u8* g;
-    for (; *t; t++, x += 8) {
-        g = big_glyph + big_idx(*t) * 8;
-        for (r = 0; r < 8; r++) {
-            ppu_at(x, y + r);
-            for (c = 0; c < 8; c++) PPUDATA = g[r] & (0x80 >> c) ? BIG_QUAD + 15 : 0;
+    t = 1;
+    for (ty = 0; ty < h; ty++)
+        for (tx = 0; tx < w; tx++, t++) {
+            const u8* c = big_cb + tx * 8;
+            const u8* r = big_sy + ty * 8;
+            latch = PPUSTATUS; PPUADDR = 0x10 | (t >> 4); PPUADDR = t << 4;
+            for (k = 0; k < 8; k++) PPUDATA = c[r[k]];
+            for (k = 0; k < 8; k++) PPUDATA = 0;      /* colour 1 only */
         }
-    }
+    x0 = (32 - w) / 2; y0 = 14 - h / 2;
+    t = 1;
+    for (ty = 0; ty < h; ty++) { ppu_at(x0, y0 + ty); for (tx = 0; tx < w; tx++) PPUDATA = t++; }
 }
-static void big_step(u8 size, u8 col) {
+static void big_step(u8 w, u8 h, u8 col) {
     clear_screen();                                   /* screen off */
-    load_pt1(1);
-    bgctl = 0x10;
-    switch (size) {
-    case 0: ps_at(10, 14, "DRUGLORD!!!"); break;
-    case 1: big_s2(5, 14, "DRUGLORD!!!"); break;
-    case 2: big_s4(0, 9, "DRUGLORD"); big_s4(10, 15, "!!!"); break;
-    default: big_s8(0, 2, "DRUG"); big_s8(0, 10, "LORD"); big_s8(4, 18, "!!!"); break;
-    }
+    bgctl = 0x10; pt1_set = 0;                        /* pattern table 1 is overwritten: the next load_pt1 reloads */
+    big_line(w, h);
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = col;
     ppu_show();                                       /* on again, in vblank */
 }
@@ -256,19 +258,20 @@ void show_win(void) {
     i16 pct = 0;
     u32 score;
     u8 rk = 0, f;
-    static const u8 cols[2] = {0x28, 0x16};          /* yellow, red */
+    /* five sizes (11, 16, 22, 27 and 32 tiles wide) going white, pale pink, pink, red, dark red; a note with each
+     * flash, and a last flash at full size */
+    static const u8 bw[5] = {11, 16, 22, 27, 32}, bh[5] = {1, 2, 2, 3, 3};
+    static const u8 bcol[5] = {0x30, 0x36, 0x26, 0x16, 0x06};
     static const u16 do_note[6] = {HZ(523), HZ(587), HZ(659), HZ(784), HZ(880), HZ(1047)};
     music_stop();
-    /* six flashes, each with a "do": the word grows on the first four, the last two flash it at full size;
-     * the notes climb C5 D5 E5 G5 A5 C6 */
+    for (f = 0; f < 11; f++) big_g[f] = big_idx(big_text[f]) * 8;
     for (f = 0; f < 6; f++) {
-        if (f < 4) big_step(f, cols[f & 1]);
-        vb_pal(0x01, 0x30);                               /* the flash, with the note */
+        if (f < 5) big_step(bw[f], bh[f], bcol[f]);
+        else { vb_pal(0x01, 0x0F); cr_wait(4); vb_pal(0x01, 0x06); }   /* the last flash: off and on */
         snd(do_note[f], 6);
-        vb_pal(0x01, cols[f & 1]);
         cr_wait(14);
     }
-    cr_wait(30);
+    cr_wait(40);
     if (total_deals != 0) pct = (i16)(good_deals * 100) / total_deals;
     score = score_calc(cash + bank - debt, pct);
     while (rk < 10 && rank_thr[rk] <= score) rk++;

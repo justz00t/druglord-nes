@@ -43,7 +43,9 @@ typedef uint32_t u32;
 #define HZ(f) ((u16)(111860UL / (f)))
 #define ROW_DRUGS 12
 #define START_X 10
-#define START_Y 15
+#define START_Y 21         /* "PRESS START" on the title screen */
+extern unsigned char m_loops;   /* times the title tune has played through */
+#define LOGO_Y 10          /* first row of the logo: rows 10-15 lie in attribute rows of their own (rows 8-15) */
 #define SND_COUNT 18
 #define DBG_COUNT 23
 
@@ -184,7 +186,7 @@ void thugs_scene(void);
 #pragma wrapped-call (pop)
 #pragma wrapped-call (push, bankcall, 1)
 /* hiscore.c */
-void hs_reset(void); void hs_init(void); u8 hs_place(u32 s); void hs_show(u8 hl); void hs_flash(void);
+void hs_reset(void); void hs_init(void); u8 hs_place(u32 s); void hs_show(u8 hl); void hs_flash(void); u8 hs_attract(void);
 void hs_entry(u8 pos, u32 score, u8 rk); void hs_after_win(u32 score, u8 rk);
 /* bank_b.c: start/end screens, title, high scores, debug */
 void init_game(void);
@@ -196,7 +198,6 @@ u8 ask_play_again(void);
 void exit_screen(void);
 void credits_screen(void);
 void title_screen(void);
-void start_text(u8 on);
 void title_wait(void);
 void sound_test(void);
 void dbg_wait_release(void);

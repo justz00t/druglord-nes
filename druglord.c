@@ -260,6 +260,7 @@ const u16* m_pp; static const u16* m_tp;
 u16 m_n, m_rate, m_ev, m_acc;
 u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
 u8 m_unit, m_nv;                /* 64th-note count in the bar (the drums), noise volume */
+u8 m_loops;                     /* times the tune has played through since music_start() */
 void music_stop(void) {
     music_on = 0;
     APU(0x00) = 0x30; APU(0x04) = 0x30; APU(0x08) = 0x80; APU(0x0C) = 0x30;
@@ -268,7 +269,7 @@ void music_start(void) {
     APU(0x15) = 0x0F;               /* pulse 1, pulse 2, triangle, noise */
     APU(0x01) = 0x08; APU(0x05) = 0x08;
     m_d = title_d; m_ab = title_ab; m_c = title_c; m_pp = title_pp; m_tp = title_tp; m_n = TITLE_EVENTS; m_rate = TITLE_RATE; m_use2 = 1;
-    m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0; m_unit = 0; m_nv = 0;
+    m_ev = 0; m_acc = 0; m_wait = m_d[0]; m_v1 = m_v2 = 0; m_tri = 0; m_tage = 0; m_cnt = 0; m_unit = 0; m_nv = 0; m_loops = 0;
     pend = 0; music_on = 1;
 }
 void music_note(u8 ab, u8 c) {
@@ -284,7 +285,7 @@ void music_frame(void) {
         if (m_wait) m_wait--;
         while (m_wait == 0) {
             music_note(m_ab[m_ev], m_c[m_ev]);
-            if (++m_ev >= m_n) { m_ev = 0; m_unit = 0; }
+            if (++m_ev >= m_n) { m_ev = 0; m_unit = 0; m_loops++; }
             m_wait = m_d[m_ev];
         }
         /* drums on the noise channel: kick on the beat, snare on 2 and 4, a closed hat on the off-beats */

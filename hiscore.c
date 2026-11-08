@@ -105,6 +105,21 @@ void hs_flash(void) {
     pal_default();
 }
 
+/* the attract mode: the table for 2 seconds between plays of the title tune.  Returns 1 if START or A was pressed. */
+u8 hs_attract(void) {
+    u8 f, k = 0, e;
+    hs_draw(0xFF);
+    ppu_show();
+    for (f = 0; f < 120; f++) {
+        wait_vblank(); frames++;
+        if (!(f & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
+        if (e & (BTN_START | BTN_A)) { pal_default(); return 1; }
+    }
+    pal_default();
+    return 0;
+}
+
 /* ---- initials entry after a win ---- */
 static void entry_letters(char* nm, u8 cur) {
     u8 i;

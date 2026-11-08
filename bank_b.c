@@ -221,64 +221,108 @@ void credits_screen(void) {
     for (n = 0; n < 240; n++) wait_vblank();
 }
 
-/* the title screen: the DOS logo (pattern table 1) with its colours flowing across it, the text in the DOS colours */
-static const u8 hues[8] = {0x16, 0x17, 0x28, 0x2A, 0x2C, 0x12, 0x14, 0x15};
+/* ---- the title screen: the DOS logo and PRESS START, nothing else.  The logo is white; a red snake crawls
+ *      across it and back (a bright red head, its tail fading to pink), then the whole logo flashes
+ *      red, white, red, white, and the snake sets off again.  The snake moves by changing the logo's attribute
+ *      bytes (one 16-pixel column at a time); the four palettes are fixed:
+ *        0: white face   (the logo, and the text)     1: bright red (the head)
+ *        2: lighter red  (the tail)                   3: pink       (the tip of the tail)
+ *      Each face is a checker of colours 1 and 3 (from the DOS shade character; both the same here, so the faces
+ *      are solid), shadow colour 2.  Each part of the snake is two columns (32 pixels) long. ---- */
+static const u8 title_pal[16] = {0x0F, 0x30, 0x00, 0x30,  0x0F, 0x16, 0x00, 0x16,  0x0F, 0x26, 0x00, 0x26,  0x0F, 0x36, 0x00, 0x36};
+static u8 logo_q[16];                /* the palette of each 16-pixel column of the logo */
 void title_screen(void) {
     u8 x, y;
     const u8* m = logo_map;
     clear_screen();
-    set_palette();
     load_pt1(1);
     ppu_off();
-    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x01;
-    PPUDATA = 0x28; PPUDATA = 0x2A; PPUDATA = 0x16;          /* palette 0: yellow, green, red text */
-    for (x = 1; x < 4; x++) { PPUADDR = 0x3F; PPUADDR = x * 4 + 2; PPUDATA = 0x00; }   /* logo shadow: dark grey */
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
+    for (x = 0; x < 16; x++) PPUDATA = title_pal[x];
     bgctl = 0x10;
-    for (y = 0; y < LOGO_H; y++) { ppu_at(0, 4 + y); for (x = 0; x < LOGO_W; x++) PPUDATA = *m++; }
-    for (x = 0; x < 16; x++) colour_cols(4, 9, x, x, 1 + x % 3);
-    ps_at(9, 12, T_VERSION);
-    ps_at(6, START_Y, T_ARROW_R); ps_at(START_X, START_Y, "PRESS START"); ps_at(22, START_Y, T_ARROW_L);
-    ps_at(5, 19, T_WRITTEN);
-    ps_at(7, 21, T_COPY1); ps_at(8, 22, T_COPY2);
-    ps_at(6, 25, T_PORT);
+    for (y = 0; y < LOGO_H; y++) { ppu_at(0, LOGO_Y + y); for (x = 0; x < LOGO_W; x++) PPUDATA = *m++; }
+    ps_at(START_X, START_Y, "PRESS START");
+    for (x = 0; x < 16; x++) logo_q[x] = 0;
 }
-/* the logo colours: palettes 1-3 get neighbouring hues, moved along one step at a time (call after wait_vblank) */
-static void logo_colours(u8 k) {
-    u8 i;
-    latch = PPUSTATUS;
-    for (i = 0; i < 3; i++) {
-        u8 h = hues[(k + i) & 7];
-        PPUADDR = 0x3F; PPUADDR = 5 + i * 4; PPUDATA = h;
-        PPUADDR = 0x3F; PPUADDR = 7 + i * 4; PPUDATA = h + 0x10;
+/* the logo's attribute bytes from logo_q[] (rows 8-15 of the screen; the logo is on rows 10-15 = attribute bytes 16-31); worked out
+ * before vblank, because cc65 code is too slow to do it inside the 20 lines of vblank */
+static void logo_attr_calc(void) {
+    u8 i, v;
+    for (i = 0; i < 8; i++) {
+        v = logo_q[i * 2] | (logo_q[i * 2 + 1] << 2);
+        v |= v << 4;
+        attr[16 + i] = attr[24 + i] = v;
     }
-    PPUADDR = 0x3F; PPUADDR = 0x00; PPUADDR = 0; PPUADDR = 0;
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
 }
-/* draw or erase "PRESS START" during vblank, without ever blanking the screen (no flicker) */
-void start_text(u8 on) {
-    const char* s = "PRESS START";
-    u8 i;
-    wait_vblank();
-    ppu_at(START_X, START_Y);
-    for (i = 0; i < 11; i++) PPUDATA = on ? (u8)s[i] : ' ';
-    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+static void logo_attr_put(void) {    /* in vblank: 16 bytes, unrolled */
+    PPUADDR = 0x23; PPUADDR = 0xC0 + 16;
+    PPUDATA = attr[16]; PPUDATA = attr[17]; PPUDATA = attr[18]; PPUDATA = attr[19];
+    PPUDATA = attr[20]; PPUDATA = attr[21]; PPUDATA = attr[22]; PPUDATA = attr[23];
+    PPUDATA = attr[24]; PPUDATA = attr[25]; PPUDATA = attr[26]; PPUDATA = attr[27];
+    PPUDATA = attr[28]; PPUDATA = attr[29]; PPUDATA = attr[30]; PPUDATA = attr[31];
 }
-
-/* the title screen with its music; returns when START (or A) is pressed */
+/* the snake: the head at column h, the tail behind it (behind = against the direction it moves) */
+static void snake(signed char h, signed char dir) {
+    signed char c, d;
+    for (c = 0; c < 16; c++) {
+        d = dir > 0 ? h - c : c - h;
+        logo_q[c] = d < 0 || d > 5 ? 0 : 1 + (d >> 1);
+    }
+}
+/* the title screen with its music; returns when START (or A) is pressed.  After the tune has played 10 times the
+ * high score table is shown for 2 seconds, then the title again. */
+#ifndef TITLE_PLAYS
+#define TITLE_PLAYS 10               /* plays of the title tune before the score table */
+#endif
+#define SNAKE_SPEED 3                /* frames per column */
+#define FLASH_TIME 10                /* frames per colour of the flash */
 void title_wait(void) {
-    u8 e, blink = 0, k = 0;
-    music_start();
-    title_screen();
-    ppu_show();
+    u8 e, blink, t;
+    signed char h, dir;
+    u8 flash;
     for (;;) {
-        if ((blink & 31) == 0) start_text(!(blink & 32));
-        else { wait_vblank(); if ((blink & 7) == 4) logo_colours(k++); }
-        frames++; blink++;
-        music_update();
-        e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
-        if (e & (BTN_START | BTN_A)) break;
+        music_start();
+        title_screen();
+        ppu_show();
+        blink = 0; t = 0; h = 0; dir = 1; flash = 0;
+        snake(h, dir);
+        while (m_loops < TITLE_PLAYS) {
+            /* one step of the logo animation */
+            if (++t >= (flash ? FLASH_TIME : SNAKE_SPEED)) {
+                t = 0;
+                if (flash) {                                     /* red, white, red, white, then the snake */
+                    if (++flash > 4) { flash = 0; h = 0; dir = 1; snake(h, dir); }
+                    else { for (e = 0; e < 16; e++) logo_q[e] = (flash & 1) ? 1 : 0; }
+                } else {
+                    h += dir;
+                    if (dir > 0 && h > 15) { h = 14; dir = -1; }  /* the bounce at the right end */
+                    if (dir < 0 && h < -6) {                      /* back home, tail and all: flash */
+                        flash = 1; for (e = 0; e < 16; e++) logo_q[e] = 1;
+                    } else snake(h, dir);
+                }
+            }
+            /* this frame's vblank: "PRESS START" on or off every half second, the logo colours on the other frames */
+            if ((blink & 31) == 0) {
+                const char* s = (blink & 32) ? "           " : "PRESS START";
+                wait_vblank();
+                latch = PPUSTATUS;
+                PPUADDR = 0x20 + (START_Y >> 3); PPUADDR = ((START_Y & 7) << 5) + START_X;
+                for (e = 0; e < 11; e++) PPUDATA = (u8)s[e];
+            } else {
+                logo_attr_calc();
+                wait_vblank();
+                latch = PPUSTATUS;
+                logo_attr_put();
+            }
+            PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+            frames++; blink++;
+            music_update();
+            e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
+            if (e & (BTN_START | BTN_A)) { music_stop(); return; }
+        }
+        music_stop();
+        if (hs_attract()) return;                                /* START on the score table starts a game too */
     }
-    music_stop();
 }
 
 #ifdef DEBUG

@@ -210,16 +210,74 @@ void debug_menu(void);
 
 
 /* shown for 4 seconds before the title screen */
+/* ---- the credits at boot: "NES port by justz00t" falls into place letter by letter in a random order (sprites,
+ *      each turned into a background tile as it lands), flashes once; then the three red lines fade in from black
+ *      and flash once. ---- */
+#define OAM ((u8*)0x0200)            /* the sprite buffer, copied to the PPU each frame by DMA ($0200-$02FF is free RAM) */
+#define CR_ROW 16                    /* the falling line */
+#define CR_X 6
+static const char cr_text[] = "NES port by justz00t";
+static void vb_pal(u8 a, u8 v) {     /* set one palette entry during vblank, the screen staying on */
+    wait_vblank(); frames++;
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = a; PPUDATA = v;
+    PPUADDR = 0x3F; PPUADDR = 0; PPUADDR = 0; PPUADDR = 0;
+    PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+}
+static void cr_wait(u8 n) { while (n--) { wait_vblank(); frames++; } }
 void credits_screen(void) {
-    u8 n;
+    u8 ord[20], n = 0, i, j, t, k, done = 0, land_n, land[4];
+    u16 y[20], v[20];                /* each letter's top in 1/16 pixels, its speed in 1/16 pixels a frame */
+    u8 st[20];                       /* 0 waiting, 1 falling, 2 landed */
     clear_screen(); set_palette();
     ps_at(5, 8, "Written by Phil Erwin");
     ps_at(7, 10, "Copyright 1991-93");
     ps_at(8, 12, "FantasyWare Inc.");
-    ps_at(6, 16, "NES port by justz00t");
-    pal3(0x2A, 0x1A); colour_rows(8, 13, 1); colour_rows(16, 17, 3);
+    colour_rows(8, 13, 1); colour_rows(16, 17, 3);
+    ppu_off();
+    latch = PPUSTATUS;
+    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x0F;      /* palette 1 (the red lines): black for now */
+    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x2A;      /* palette 3: green */
+    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x2A;      /* sprite palette 0: green */
+    for (i = 0; i < 20; i++) if (cr_text[i] != ' ') ord[n++] = i;
+    for (i = n - 1; i > 0; i--) { j = rnd() % (i + 1); t = ord[i]; ord[i] = ord[j]; ord[j] = t; }   /* a random order */
+    for (i = 0; i < 20; i++) { st[i] = 0; y[i] = 0; v[i] = 0; }
+    for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;
+    APU(0x14) = 0x02;                                    /* no stray sprites on the first frame */
     ppu_show();
-    for (n = 0; n < 240; n++) wait_vblank();
+    PPUMASK = 0x1E;                                      /* sprites on */
+    for (t = 0; done < n; t++) {
+        /* start a letter every 6 frames; move the falling ones (gravity: half a pixel a frame, every frame) */
+        if (t % 6 == 0 && t / 6 < n) st[ord[t / 6]] = 1;
+        land_n = 0;
+        for (k = 0; k < n; k++) {
+            i = ord[k];
+            if (st[i] != 1) { OAM[k * 4] = 0xFF; continue; }
+            v[i] += 8; y[i] += v[i];
+            if (y[i] >= (u16)(CR_ROW * 8 + 8) * 16) {     /* landed (the letter started 8 pixels above the screen) */
+                st[i] = 2; done++; OAM[k * 4] = 0xFF;
+                if (land_n < 4) land[land_n++] = i;
+                continue;
+            }
+            OAM[k * 4] = (u8)(y[i] >> 4) < 8 ? 0xFF : (u8)((y[i] >> 4) - 8 - 1);
+            OAM[k * 4 + 1] = (u8)cr_text[i]; OAM[k * 4 + 2] = 0; OAM[k * 4 + 3] = (CR_X + i) * 8;
+        }
+        wait_vblank(); frames++;
+        APU(0x14) = 0x02;                                /* sprite DMA from $0200 */
+        latch = PPUSTATUS;
+        for (j = 0; j < land_n; j++) {
+            PPUADDR = 0x22; PPUADDR = (CR_ROW - 16) * 32 + CR_X + land[j]; PPUDATA = (u8)cr_text[land[j]];
+        }
+        PPUCTRL = bgctl; PPUSCROLL = 0; PPUSCROLL = 0;
+    }
+    PPUMASK = 0x0A;                                      /* sprites off again */
+    cr_wait(15);
+    vb_pal(0x0D, 0x30); cr_wait(6); vb_pal(0x0D, 0x2A);  /* the green line flashes */
+    cr_wait(20);
+    vb_pal(0x05, 0x0F); cr_wait(8);                      /* the red lines fade in, then flash */
+    vb_pal(0x05, 0x06); cr_wait(8);
+    vb_pal(0x05, 0x16); cr_wait(14);
+    vb_pal(0x05, 0x30); cr_wait(6); vb_pal(0x05, 0x16);
+    cr_wait(120);
 }
 
 /* ---- the title screen: the DOS logo and PRESS START, nothing else.  The logo is white; a red snake crawls

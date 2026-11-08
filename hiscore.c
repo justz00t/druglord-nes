@@ -50,8 +50,12 @@ static void hs_insert(u8 pos, const char* nm, u32 s) {
     hs_seal();
 }
 
-/* ---- palette flashing: palettes 1..3 hold yellow, red, cyan; they are rotated through a rainbow ---- */
+/* ---- the table's colours: palette 0 white (the headings, "Press A to continue"), 1 solid blue (the lines),
+ *      2 the title cycling red, yellow, green, cyan, blue, magenta, 3 the new entry flashing blue and white.
+ *      The entry screen still uses the old rainbow on palettes 1-3. ---- */
 static const u8 rainbow[7] = {0x28, 0x16, 0x2C, 0x2A, 0x30, 0x24, 0x27};
+static const u8 hue[6] = {0x16, 0x28, 0x1A, 0x2C, 0x12, 0x14};
+#define HS_BLUE 0x12
 static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_vblank() */
     latch = PPUSTATUS;
     PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = a;
@@ -61,59 +65,91 @@ static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_
     PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void pal_default(void) { wait_vblank(); pal_set3(0x28, 0x16, 0x2C); }
+static void hs_colours(u8 f) { pal_set3(HS_BLUE, hue[(f >> 3) % 6], (f & 8) ? 0x30 : HS_BLUE); }
 
-/* ---- the table ---- */
-static const u8 hs_ink[NHS] = {1, 3, 0, 1, 3, 0, 1, 3, 0, 1};
-static void hs_draw(u8 hl) {
-    u8 i, j, y;
+/* ---- the table: the headings are drawn at once, then the ten lines fall into place one at a time, 10 first.
+ *      A falling line moves down a row a frame: during vblank its old row is blanked and its new row written
+ *      (one run of 61 bytes, from column 1 of the old row to column 29 of the new one). ---- */
+static char hs_lb[61];                                 /* 29 blanks, 3 for the row edges, then the 29-character line */
+static void hs_line(u8 i) {                            /* line i into hs_lb[32..60] (screen columns 1-29) */
+    char* p = hs_lb + 32;
+    const char* r;
+    u8 j;
+    for (j = 0; j < 61; j++) hs_lb[j] = ' ';
+    if (i == 9) { p[0] = '1'; p[1] = '0'; } else p[1] = '1' + i;
+    p[2] = '.';
+    for (j = 0; j < 3; j++) p[4 + j] = HS[i].n[j];
+    ltoa_s((i32)HS[i].sc);
+    for (j = 0; nb[j]; j++) {}
+    { u8 k; for (k = 0; k < j; k++) p[8 + 8 - j + k] = nb[k]; }
+    r = rank_name[HS[i].rk];
+    for (j = 0; r[j] && j < 12; j++) p[17 + j] = r[j];
+}
+static void hs_draw(u8 hl, u8 press) {
     page();
-    ink = 2; ps_at(5, 1, "H I G H   S C O R E S");
-    ink = 0; ps_at(1, 3, "NO"); ps_at(5, 3, "NAME"); ps_at(12, 3, "SCORE"); ps_at(18, 3, "RANK");
-    for (i = 0; i < NHS; i++) {
-        y = 5 + 2 * i;
-        ink = (i == hl) ? 2 : hs_ink[i];
-        at(1, y); pn_r(i + 1, 2); pc('.');
-        at(5, y);
-        for (j = 0; j < 3; j++) pc((u8)HS[i].n[j]);   /* the new entry stands out by its colour, not inverted */
-        at(9, y); pn_r((i32)HS[i].sc, 8);
-        at(18, y); ps(rank_name[HS[i].rk]);
+    ps_at(5, 1, "H I G H   S C O R E S");
+    ps_at(1, 3, "NO"); ps_at(5, 3, "NAME"); ps_at(12, 3, "SCORE"); ps_at(18, 3, "RANK");
+    if (press) ps_at(1, 27, "Press A to continue");
+    colour_rows(0, 1, 2);                              /* the title: cycling */
+    colour_rows(4, 25, 1);                             /* the lines: blue */
+    if (hl < NHS) colour_rows(4 + 2 * hl, 5 + 2 * hl, 3);   /* the new entry: flashing */
+}
+/* the fall; f is the frame counter shared with the caller's colour cycling.  Returns the buttons pressed. */
+static u8 hs_fall(u8* f, u8 btns) {
+    u8 i, y, j, e, got = 0;
+    for (i = NHS; i-- > 0; ) {
+        hs_line(i);
+        for (y = 4; y <= 5 + 2 * i; ) {
+            wait_vblank(); frames++;
+            if (!((*f)++ & 7)) hs_colours(*f);         /* a colour step instead of a move, so vblank is never too full */
+            else {
+                latch = PPUSTATUS;
+                if (y == 4) { ppu_at(1, 4); ppu_src = (const u8*)hs_lb + 32; ppu_copy(29); }
+                else { ppu_at(1, y - 1); ppu_src = (const u8*)hs_lb; ppu_copy(61); }
+                PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
+                y++;
+            }
+            music_update();
+            e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; got |= d; }
+            if (got & btns) return got;
+        }
     }
+    return got;
 }
 /* hl = place to highlight (0xFF none); waits for A */
 void hs_show(u8 hl) {
-    u8 k = 0, f = 0, e;
-    hs_draw(hl);
-    ink = 3; ps_at(1, 27, "Press A to continue");
+    u8 f = 0, e;
+    hs_draw(hl, 1);
     ppu_show();
+    hs_fall(&f, 0);
     for (;;) {
         wait_vblank(); frames++;
-        if (!(f++ & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        if (!(f++ & 7)) hs_colours(f);
         music_update();                               /* after the palette: vblank is for the PPU */
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
         if (e & BTN_A) break;
     }
     pal_default();
 }
-/* shown for a second before the title screen */
+/* shown for a second (after the lines have fallen) before the title screen */
 void hs_flash(void) {
-    u8 f, k = 0;
-    hs_draw(0xFF);
+    u8 f = 0, n;
+    hs_draw(0xFF, 0);
     ppu_show();
-    for (f = 0; f < 66; f++) {
-        wait_vblank(); frames++;
-        if (!(f & 3)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
-    }
+    hs_fall(&f, 0);
+    for (n = 0; n < 66; n++) { wait_vblank(); frames++; if (!(f++ & 3)) hs_colours(f); }
     pal_default();
 }
 
 /* the attract mode: the table for 2 seconds between plays of the title tune.  Returns 1 if START or A was pressed. */
 u8 hs_attract(void) {
-    u8 f, k = 0, e;
-    hs_draw(0xFF);
+    u8 f = 0, n, e;
+    hs_draw(0xFF, 0);
     ppu_show();
-    for (f = 0; f < 120; f++) {
+    if (hs_fall(&f, BTN_START | BTN_A) & (BTN_START | BTN_A)) { pal_default(); return 1; }
+    for (n = 0; n < 120; n++) {
         wait_vblank(); frames++;
-        if (!(f & 7)) { k++; pal_set3(rainbow[k % 7], rainbow[(k + 2) % 7], rainbow[(k + 4) % 7]); }
+        if (!(f++ & 7)) hs_colours(f);
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
         if (e & (BTN_START | BTN_A)) { pal_default(); return 1; }
     }

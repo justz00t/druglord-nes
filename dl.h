@@ -156,6 +156,10 @@ void msg_wait(void);
 void game(void);
 void load_font(void);
 void load_pt1(u8 set);
+void ppu_write2(const u8* src, u8 n);
+extern const u8* ppu_src;               /* ppu_copy: n bytes from ppu_src to the PPU, fast enough for vblank (crt0.s) */
+#pragma zpsym ("ppu_src")
+void __fastcall__ ppu_copy(u8 n);
 extern u8 pt1_set;
 
 /* ---- functions in the switchable PRG banks: every call goes through _bankcall (see crt0.s) ---- */

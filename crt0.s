@@ -2,7 +2,8 @@
 ;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
-        .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count
+        .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count, _ppu_copy
+        .exportzp       _ppu_src
         .export         __STARTUP__ : absolute = 1
         .import         _main, zerobss, copydata, callptr4
         .import         __STACK_START__, __STACK_SIZE__
@@ -97,3 +98,19 @@ _curbank: .res 1
 
 .segment "BSS"
 _nmi_count: .res 1
+
+; ppu_copy(n): copy n bytes (1-255) from ppu_src to PPUDATA, about 14 cycles a byte.  For vblank writes:
+; a C loop costs 60-80 cycles a byte (its counter lives on the C stack), too slow for vblank's 2270 cycles.
+.segment "ZEROPAGE"
+_ppu_src: .res 2
+.segment "STARTUP"
+_ppu_copy:
+        tax
+        beq     @done
+        ldy     #0
+@loop:  lda     (_ppu_src),y
+        sta     $2007
+        iny
+        dex
+        bne     @loop
+@done:  rts

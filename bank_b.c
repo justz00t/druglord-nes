@@ -103,7 +103,7 @@ static void end_scene(void) {
     PPUDATA = 0x0F; PPUDATA = 0x1A; PPUDATA = 0x28; PPUDATA = 0x17;      /* 2: green, yellow, brown */
     PPUDATA = 0x0F; PPUDATA = 0x30; PPUDATA = 0x2C; PPUDATA = 0x28;      /* 3: white, cyan, yellow (the score box) */
     bgctl = 0x10;
-    for (y = 0; y < SCENE_H; y++) { ppu_at(1, y); for (x = 0; x < SCENE_W; x++) PPUDATA = *m++; }
+    for (y = 0; y < SCENE_H; y++) { ppu_at(1, y); ppu_write2(m, SCENE_W); m += SCENE_W; }
     colour_cols(0, 7, 7, 9, 1);                                          /* the lamp */
     guns = num_guns < 10 ? (u8)num_guns : 10;
     for (i = 0; i < guns; i++) {
@@ -159,7 +159,7 @@ static void vb_row(u8 y) {
     wait_vblank(); frames++;
     latch = PPUSTATUS;
     ppu_at(2, y);
-    for (i = 0; i < 28; i++) PPUDATA = (u8)row_b[i];
+    ppu_src = (const u8*)row_b; ppu_copy(28);
     PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
 }
 static void vb_arrows(u8 top) {

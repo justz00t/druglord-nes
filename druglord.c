@@ -830,6 +830,13 @@ void load_font(void) {
     bank_set(0);
     pt1_set = 1;
 }
+/* copy n bytes of data kept in PRG bank 2 to the PPU (at the address already set; rendering off) */
+void ppu_write2(const u8* src, u8 n) {
+    u8 b = curbank;
+    bank_set(2);
+    while (n--) PPUDATA = *src++;
+    bank_set(b);
+}
 /* copy one of the 4 KB tile sets of PRG bank 2 into pattern table 1 (rendering must be off) */
 void load_pt1(u8 set) {
     const u8* p = NESfont + (u16)set * 4096;

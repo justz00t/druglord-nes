@@ -9,7 +9,7 @@ How the MIDI is played on the NES (a generic import, nothing tuned for one song)
   * at every 16th, of the notes then sounding (drum channel 10 ignored): the lowest, if below middle G,
     goes to the triangle (bass); of the rest, the highest goes to pulse 1 and the next to pulse 2
   * the game adds a simple drum beat (kick, snare, hats) on the noise channel
-  * the song loops; if it does not fit (about 950 changes of notes), it is cut at a bar line
+  * the song loops; if it does not fit (about 400 changes of notes), it is cut at a bar line
 
 easter.bin: 6-byte header (rate 8.8 = 16ths per frame, event count, 2 spare), 128 pulse periods
 (little endian, MIDI note 0-127), then 4 bytes per event: wait in 16ths, pulse 1, pulse 2, triangle
@@ -63,7 +63,8 @@ for q in range(units):
     row = (p1 | (0x80 if p1 and (p1 in hit or p1 - 12 in hit or p1 - 24 in hit) else 0),
            p2 | (0x80 if p2 and (p2 in hit or p2 - 12 in hit or p2 - 24 in hit) else 0), tri)
     if row != last or any(r & 0x80 for r in row[:2]): ev.append([q, row]); last = row
-MAXEV = (4096 - 6 - 256 - 512) // 4       # (512 bytes of bank 2 are kept for the main-menu song data)
+MAXEV = (1900 - 6 - 256) // 4             # bank 2 also holds the tile sets, the menu song, the victory tune and
+                                          # the win-scene picture: about 1.9 KB is left for this song
 if len(ev) + units // 255 + 2 > MAXEV:
     cut = units
     while len([e for e in ev if e[0] < cut]) + cut // 255 + 2 > MAXEV: cut -= 16
@@ -82,6 +83,6 @@ for n, (q, row) in enumerate(ev):
 rate = round(256 * (1e6 / tempo) * 4 / 60.0988)          # 16ths per frame, 8.8 fixed point
 per = [min(2047, round(1789773 / (16 * 440 * 2 ** ((k - 69) / 12))) - 1) for k in range(128)]
 blob = struct.pack('<HHH', rate, len(recs), 0) + b''.join(struct.pack('<H', x) for x in per) + b''.join(recs)
-assert len(blob) <= 4096
+assert len(blob) <= 1900
 open(os.path.join(out, 'easter.bin'), 'wb').write(blob)
 print('mid2nes: %s -> easter.bin, %d bars, %d events, %d bytes' % (os.path.basename(src), units // 16, len(recs), len(blob)))

@@ -1,5 +1,5 @@
-; Start-up code for the NES port: mapper 2 (UxROM), 64 KB PRG, 8 KB CHR-RAM, 8 KB battery-backed WRAM at $6000.
-;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = fixed (this file, the runtime,
+; Start-up code for the NES port: mapper 2 (UxROM), 128 KB PRG, 8 KB CHR-RAM, 8 KB battery-backed WRAM at $6000.
+;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = the music, bank 4 = the high scores (hiscore.c), banks 5-6 = free, bank 7 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
         .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count, _ppu_copy
@@ -15,7 +15,7 @@ PPUSTATUS = $2002
 
 .segment "HEADER"
         .byte   $4E,$45,$53,$1A ; "NES",$1A
-        .byte   4               ; 4 x 16 KB PRG
+        .byte   8               ; 8 x 16 KB PRG (128 KB)
         .byte   0               ; no CHR-ROM (CHR-RAM)
         .byte   %00100011       ; mapper 2 (low nibble), battery, vertical mirroring
         .byte   %00001000       ; NES 2.0, mapper high nibble 0
@@ -86,7 +86,7 @@ _bankcall:
         ldx     tmp3
         rts
 
-banktab: .byte  0, 1, 2, 3
+banktab: .byte  0, 1, 2, 3, 4, 5, 6, 7
 
 .segment "BSS"
 _curbank: .res 1

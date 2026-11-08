@@ -5,7 +5,7 @@ It is **not** part of the byte-matched C source in https://github.com/justz00t/d
 
 ![title screen](docs/title.png)
 
-`druglord.nes` is the ready-to-run ROM (mapper 2 / UxROM, 64 KB PRG, CHR-RAM, 8 KB battery-backed WRAM). Any NES emulator will run it.
+`druglord.nes` is the ready-to-run ROM (mapper 2 / UxROM, 128 KB PRG, CHR-RAM, 8 KB battery-backed WRAM). Any NES emulator will run it. The high score table is kept in the battery-backed WRAM (with a checksum), so it survives power-off.
 
 `druglord-debug.nes` is the same game plus a **debug menu**: press SELECT and START together on the main menu to pick any event or screen (cop fight, every random event, mugger variants, thugs, death, win, replay prompt, NOTICE, credits, title) or open the **sound test**, which plays every sound effect and the title music. The regular ROM has no debug menu.
 
@@ -58,21 +58,21 @@ Original quirks are kept, e.g. banking does not pass a day and events only happe
 
 ## Build
 
-`./build.sh` builds both ROMs (`druglord.nes` and `druglord-debug.nes`, the latter with `-DDEBUG`); it needs cc65 on the path; set `CC65_HOME` if it is not installed system-wide).
-The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main loop), `bank_a.c` (cop fight, events, menus), `bank_b.c` + `hiscore.c` (start/end screens, title, high scores, debug), `crt0.s` (start-up, bank switching), `dl.h` (shared declarations). Calls into the switchable banks go through `_bankcall` (cc65 `wrapped-call`).
+`./build.sh` builds both ROMs (`druglord.nes` and `druglord-debug.nes`, the latter with `-DDEBUG`); it needs cc65 on the path (2.18 or later, e.g. Ubuntu's `apt install cc65`); set `CC65_HOME` if it is not installed system-wide).
+The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main loop), `bank_a.c` (cop fight, events, menus), `bank_b.c` (start/end screens, title, debug), `hiscore.c` (high scores, bank 4), `music.c` + `victory.c` (the main-menu, easter-egg and victory music, bank 3), `crt0.s` (start-up, bank switching), `dl.h` (shared declarations). Calls into the switchable banks go through `_bankcall` (cc65 `wrapped-call`). PRG banks: 0 = A, 1 = B, 2 = the tile sets and pictures, 3 = the music, 4 = the high scores, 5-6 = free, 7 = fixed.
 `tools/mkdata.py` creates the tiles (`chr.bin`), the title data (`title.h`), the music tables (`music.h`) and the score tables (`tables.h`).
 The font is the IBM PC 8x8 font, so tile numbers are DOS characters (tile + 0x80 is the inverted glyph, used as highlight; tiles 8-12 are the block and shade characters).
 PRG bank 2 holds three 4 KB tile sets: the game's (pattern table 0), the title's (the font plus the logo tiles built from `tools/title_art.bin`, the DOS `titleArt` data) and the end scene's (the font plus the picture tiles from `tools/end_scene.bin` and `tools/gun_sprite.bin`, the stacks of money and the pistol); the last two are loaded into pattern table 1 as needed (`load_pt1`).
 
 ## Victory tune
 
-After a win, the initials screen plays an original victory tune (`victory.c`: C major, about 138 BPM, a 4-bar loop on all four channels), and it carries on into the high score table that follows. The table never plays it when it is reached any other way (the title screen's attract mode, the end of a game). The tune's code and data live in PRG bank 2 with the other song data and are called through the bank trampoline.
+After a win, the initials screen plays an original victory tune (`victory.c`: C major, about 138 BPM, a 4-bar loop on all four channels), and it carries on into the high score table that follows. The table never plays it when it is reached any other way (the title screen's attract mode, the end of a game). The tune's code and data live in PRG bank 3 with the other music and are called through the bank trampoline.
 
 ## Easter egg
 
 Sell **more than 100 cocaine in one sale** and the main-screen music changes to the easter-egg song for the rest of that game (until you win, die or quit; a new game starts with the normal music again). The debug ROM's "Coke+200" entry gives you enough cocaine to try it.
 
-The song comes from a MIDI file, converted at build time by `tools/mid2nes.py` (a generic import: at every 16th note the lowest sounding note below middle G goes to the triangle, the highest two others to the pulses, the drum channel is ignored and the game adds its own beat; the first tempo is used; the song loops, and is cut at a bar line if it is too long for the 1.9 KB it has in PRG bank 2, about 400 changes of notes).
+The song comes from a MIDI file, converted at build time by `tools/mid2nes.py` (a generic import: at every 16th note the lowest sounding note below middle G goes to the triangle, the highest two others to the pulses, the drum channel is ignored and the game adds its own beat; the first tempo is used; the song loops, and is cut at a bar line if it is too long for the 12 KB it has in PRG bank 3, about 2900 changes of notes).
 
 * `tools/easter_default.mid` is an original placeholder tune.
 * To use your own song, save it as **`tools/easter_local.mid`** and run `./build.sh`. That file, and the generated `easter.bin`, are in `.gitignore`, so they stay on your machine. The ROM you build then contains your song: keep that ROM to yourself (don't commit it).

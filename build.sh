@@ -14,9 +14,10 @@ build() {   # $1 = output, $2.. = extra defines
     cc65 -t nes -Os "$@" -o $B/druglord.s druglord.c && ca65 -t nes -o $B/druglord.o $B/druglord.s
     cc65 -t nes -Os --code-name CODE_A --rodata-name RODATA_A "$@" -o $B/bank_a.s bank_a.c && ca65 -t nes -o $B/bank_a.o $B/bank_a.s
     cc65 -t nes -Os --code-name CODE_B --rodata-name RODATA_B "$@" -o $B/bank_b.s bank_b.c && ca65 -t nes -o $B/bank_b.o $B/bank_b.s
-    cc65 -t nes -Os --code-name CODE_B --rodata-name RODATA_B "$@" -o $B/hiscore.s hiscore.c && ca65 -t nes -o $B/hiscore.o $B/hiscore.s
-    cc65 -t nes -Os --code-name FONT --rodata-name FONT --bss-name BSS "$@" -o $B/victory.s victory.c && ca65 -t nes -o $B/victory.o $B/victory.s
-    ld65 -C nes.cfg -o $out $B/crt0.o $B/druglord.o $B/bank_a.o $B/bank_b.o $B/hiscore.o $B/victory.o $B/chr.o nes.lib
+    cc65 -t nes -Os --code-name CODE_H --rodata-name RODATA_H "$@" -o $B/hiscore.s hiscore.c && ca65 -t nes -o $B/hiscore.o $B/hiscore.s
+    cc65 -t nes -Os --code-name MUSIC --rodata-name MUSIC "$@" -o $B/victory.s victory.c && ca65 -t nes -o $B/victory.o $B/victory.s
+    cc65 -t nes -Os --code-name MUSIC --rodata-name MUSIC "$@" -o $B/music.s music.c && ca65 -t nes -o $B/music.o $B/music.s
+    ld65 -C nes.cfg -o $out $B/crt0.o $B/druglord.o $B/bank_a.o $B/bank_b.o $B/hiscore.o $B/victory.o $B/music.o $B/chr.o nes.lib
 }
 B=$(mktemp -d)
 build druglord.nes

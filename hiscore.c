@@ -1,7 +1,7 @@
-/* PRG bank 1: the high score table (kept in the battery-backed RAM at $6000), the initials entry and the
+/* PRG bank 4: the high score table (kept in the battery-backed RAM at $6000), the initials entry and the
  * high score screen. */
 #include "dl.h"
-#include "title.h"
+#include "y2.h"
 
 typedef struct { char n[3]; u8 rk; u32 sc; } hs_t;     /* 8 bytes: initials, rank number, score */
 #define HS    ((hs_t*)0x6010)

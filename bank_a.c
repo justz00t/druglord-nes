@@ -386,6 +386,14 @@ u8 menu_sell(void) {
     }
     return 1;
 }
+/* air fare = distance on the map * 60 + 25.  floor(sqrt(3600 * (dx^2 + dy^2))) comes from a table: the grid is
+ * 6 x 5, so dx^2 + dy^2 is at most 41 (the loop it replaces took a quarter of a second per city).
+ * Only the jet menu uses it, so it lives here in bank A. */
+static const u16 dist60[42] = {0,60,84,103,120,134,146,158,169,180,189,198,207,216,224,232,240,247,254,261,268,274,281,287,293,300,305,311,317,323,328,334,339,344,349,354,360,364,369,374,379,384};
+static i32 travel_cost(u8 a, u8 b) {
+    i16 dx = (i16)city_x[a] - city_x[b], dy = (i16)city_y[a] - city_y[b];
+    return (i32)dist60[dx * dx + dy * dy] + 25;
+}
 /* a rough map of the USA for the jet menu (rows 21-27); the cities sit at their city_x/city_y grid spots */
 static const char* const usa_map[7] = {
     "  ..............-....\\         ",

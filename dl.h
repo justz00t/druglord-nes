@@ -45,8 +45,6 @@ typedef uint32_t u32;
 #define START_X 10
 #define START_Y 21         /* "PRESS START" on the title screen */
 extern unsigned char m_loops;   /* times the title tune has played through */
-void menu_music_start(void);
-void easter_music_start(void);
 extern u8 easter_on;
 #define LOGO_Y 10          /* first row of the logo: rows 10-15 lie in attribute rows of their own (rows 8-15) */
 #define SND_COUNT 18
@@ -132,7 +130,6 @@ u16 rnd(void);
 i16 dice(i16 sides, i16 count);
 i32 roll_price(u8 d);
 void gen_prices(void);
-i32 travel_cost(u8 a, u8 b);
 i16 loan_term(i16 stat, i32 total);
 void interest_one_day(void);
 void next_day(void);
@@ -191,10 +188,12 @@ u8 menu_hospital(void);
 u8 menu_quit(void);
 void thugs_scene(void);
 #pragma wrapped-call (pop)
-#pragma wrapped-call (push, bankcall, 1)
-/* hiscore.c */
+#pragma wrapped-call (push, bankcall, 4)
+/* hiscore.c, PRG bank 4: the high-score table (kept in the battery-backed WRAM at $6000) */
 void hs_reset(void); void hs_init(void); u8 hs_place(u32 s); void hs_show(u8 hl); void hs_flash(void); u8 hs_attract(void);
 void hs_entry(u8 pos, u32 score, u8 rk); void hs_after_win(u32 score, u8 rk);
+#pragma wrapped-call (pop)
+#pragma wrapped-call (push, bankcall, 1)
 /* bank_b.c: start/end screens, title, high scores, debug */
 void init_game(void);
 void show_death(void);
@@ -210,7 +209,9 @@ void sound_test(void);
 void dbg_wait_release(void);
 void debug_menu(void);
 #pragma wrapped-call (pop)
-#pragma wrapped-call (push, bankcall, 2)
-void vic_start(void);   /* victory.c, PRG bank 2: the victory tune */
-void vic_frame(void);
+#pragma wrapped-call (push, bankcall, 3)
+/* PRG bank 3, the music: music.c (main-menu and easter-egg songs) and victory.c (the victory tune) */
+void menu_music_start(void); void menu_frame(void);
+void easter_music_start(void); void easter_frame(void);
+void vic_start(void); void vic_frame(void);
 #pragma wrapped-call (pop)

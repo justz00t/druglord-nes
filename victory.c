@@ -1,7 +1,7 @@
 /* the victory tune: plays on the initials screen after a win and on into the high score table that follows it
  * (never when the table is reached any other way).  An original 4-bar loop in C major, about 138 BPM:
  * C - F - G - C, the triangle bouncing root and octave, chord stabs as a fast arpeggio on pulse 2, the tune on
- * pulse 1, drums on the noise channel.  This file lives in PRG bank 2 with the other song data (code and data);
+ * pulse 1, drums on the noise channel.  This file lives in PRG bank 3 with the other music (code and data);
  * music_frame() reaches vic_frame() through the bank trampoline. */
 #include "dl.h"
 

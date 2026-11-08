@@ -63,8 +63,9 @@ for q in range(units):
     row = (p1 | (0x80 if p1 and (p1 in hit or p1 - 12 in hit or p1 - 24 in hit) else 0),
            p2 | (0x80 if p2 and (p2 in hit or p2 - 12 in hit or p2 - 24 in hit) else 0), tri)
     if row != last or any(r & 0x80 for r in row[:2]): ev.append([q, row]); last = row
-MAXEV = (1900 - 6 - 256) // 4             # bank 2 also holds the tile sets, the menu song, the victory tune and
-                                          # the win-scene picture: about 1.9 KB is left for this song
+MAXBYTES = 12000                          # PRG bank 3 (the music bank) also holds the music code, the menu song and
+                                          # the victory tune: 12 KB is left for this song
+MAXEV = (MAXBYTES - 6 - 256) // 4
 if len(ev) + units // 255 + 2 > MAXEV:
     cut = units
     while len([e for e in ev if e[0] < cut]) + cut // 255 + 2 > MAXEV: cut -= 16
@@ -83,6 +84,6 @@ for n, (q, row) in enumerate(ev):
 rate = round(256 * (1e6 / tempo) * 4 / 60.0988)          # 16ths per frame, 8.8 fixed point
 per = [min(2047, round(1789773 / (16 * 440 * 2 ** ((k - 69) / 12))) - 1) for k in range(128)]
 blob = struct.pack('<HHH', rate, len(recs), 0) + b''.join(struct.pack('<H', x) for x in per) + b''.join(recs)
-assert len(blob) <= 1900
+assert len(blob) <= MAXBYTES
 open(os.path.join(out, 'easter.bin'), 'wb').write(blob)
 print('mid2nes: %s -> easter.bin, %d bars, %d events, %d bytes' % (os.path.basename(src), units // 16, len(recs), len(blob)))

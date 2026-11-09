@@ -64,6 +64,7 @@ void clear_screen(void) {
     for (i = 0; i < 64; i++) attr[i] = 0;
     ink = 0; attr_dirty = 0; bgctl = 0;
     pal3(0x2C, 0x1C);                                    /* cyan, unless a screen asks for green */
+    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x28; PPUDATA = 0x18;   /* palette 1 yellow (green on the main screen) */
     cx = 1; cy = 1;
 }
 /* colour a band of rows: pal 0 white, 1 yellow, 2 red, 3 green.  An attribute byte covers
@@ -573,6 +574,7 @@ void draw_main(void) {
     u8 x;
     clear_screen();
     set_palette();
+    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x2A; PPUDATA = 0x1A;   /* the labels green here */
     ps_at(2, 11, "Drug       Price    Have");
     for (x = 0; x < 32; x++) put(x, 10, 0x97);          /* the double line, in white (palette 1 colour 3) */
     colour_rows(10, 11, 1);

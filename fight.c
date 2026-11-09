@@ -18,6 +18,22 @@ void fight_row(u8 side, u8 i, i16 hp) {
 }
 void fight_msg(const char* s) { fill(1, fm_y, ' ', 30); fill(1, fm_y + 1, ' ', 30); at(1, fm_y); ink = 2; ps(s); ink = 0; }
 
+/* the shot messages: built in mb and written over the old one in a single pass (no blank frame between them) */
+static char mb[32];
+static u8 mbl;
+static void mb_s(const char* t) { while (*t && mbl < 30) mb[mbl++] = *t++; }
+static void mb_n(i16 v) { ltoa_s(v); mb_s(nb); }
+static void mb_show(void) {
+    while (mbl < 30) mb[mbl++] = ' ';
+    mb[30] = 0; mbl = 0;
+    ink = 2; ps_at(1, 26, mb); ink = 0;
+}
+/* a hit: a white star over the health value (centred on its first two digits), then the new value in its colour */
+static void hit_star(u8 side, u8 i) {
+    u8 x = side ? 26 : 10, y = 4 + i * 2;
+    ink = 0; at(x, y); pc(0x98); pc(0x99); pc(' '); pc(' ');
+    delay(16);
+}
 void cop_fight(void) {
     i16 choice, nf = 0, nc, ct, shots = 1, i, t, copsAlive, partyAlive, result = 0, att, si;
     u8 k;
@@ -49,7 +65,6 @@ void cop_fight(void) {
         status -= 5;
     }
     clear_screen();
-    ink = 2; ps_at(2, 1, "* * *  D R U G L O R D  * * *");
     ink = 1; ps_at(1, 3, "YOU"); ps_at(17, 3, "COPS");
     ink = 0;
     php[0] = health;
@@ -98,15 +113,15 @@ void cop_fight(void) {
                     for (;;) {
                         do { t = rnd() % nc; } while (chp[t] == 0);
                         sfx(gun_type + 10);
-                        fill(1, 26, ' ', 30); fill(1, 27, ' ', 30); at(1, 26); ink = 2;
-                        ps(si < num_guns ? "Firing at cop " : "Punching cop "); pn(t + 1);
+                        mb_s(si < num_guns ? "Firing at cop " : "Punching cop "); mb_n(t + 1);
                         if (rnd() % 2 == 0) {
-                            ps(" *Hit!*"); sfx(8);
+                            mb_s(" *Hit!*"); mb_show(); sfx(8);
                             chp[t] -= (si < num_guns) ? dice(6, gun_dice[gun_type]) : dice(4, 1);
                             if (chp[t] <= 0) { chp[t] = 0; copsAlive--; }
-                        } else ps(" -Missed-");
-                        fight_row(1, t, chp[t]);
-                        delay(14);
+                            hit_star(1, t);
+                            fight_row(1, t, chp[t]);
+                        } else { mb_s(" -Missed-"); mb_show(); }
+                        delay(20);
                         att++;
                         if (php[0] != 0 && copsAlive != 0 && gun_type > 3 && att < shots && si < num_guns) continue;
                         break;
@@ -120,15 +135,15 @@ void cop_fight(void) {
                     if (chp[si] == 0) continue;
                     do { t = rnd() % (nf + 1); } while (php[t] == 0);
                     sfx(ct + 10);
-                    fill(1, 26, ' ', 30); fill(1, 27, ' ', 30); at(1, 26); ink = 2;
-                    ps("Cop "); pn(si + 1); ps(" shoots at "); if (t == 0) ps("you"); else { ps("mate "); pn(t); }
+                    mb_s("Cop "); mb_n(si + 1); mb_s(" shoots "); if (t == 0) mb_s("you"); else { mb_s("mate "); mb_n(t); }
                     if (rnd() % 2 == 0) {
-                        ps(" *Hit!*"); sfx(8);
+                        mb_s(" *Hit!*"); mb_show(); sfx(8);
                         php[t] -= dice(6, gun_dice[ct]);
                         if (php[t] <= 0) { status--; php[t] = 0; partyAlive--; }
-                    } else ps(" -Missed-");
-                    fight_row(0, t, php[t]);
-                    delay(14);
+                        hit_star(0, t);
+                        fight_row(0, t, php[t]);
+                    } else { mb_s(" -Missed-"); mb_show(); }
+                    delay(20);
                     if (php[0] == 0 || partyAlive == 0) break;
                 }
             }

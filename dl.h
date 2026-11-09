@@ -109,6 +109,8 @@ void ps_at(u8 x, u8 y, const char* s);
 void ltoa_s(i32 v);
 void pn(i32 v);
 void hp_put(i16 hp, i16 max, u8 w, u8 dw);
+extern u8 live;          /* print without blanking the screen (see lflush) */
+void lflush(void);
 void pn_r(i32 v, u8 w);
 void pn_l(i32 v, u8 w);
 void ps_pad(const char* s, u8 w);

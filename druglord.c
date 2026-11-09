@@ -49,16 +49,19 @@ void clear_rows(u8 y0, u8 y1) {      /* inclusive */
 }
 void set_palette(void) {
     /* 0: white text, colours 2-3 the health colours pink and light red; 1: yellow, colour 3 white (the line);
-     * 2: red, colour 2 dark red (health), colour 3 blue (the main-menu arrow); 3: cyan */
+     * 2: red, colour 2 dark red (health), colour 3 grey (0 health); 3: cyan */
     static const u8 pal[16] = {0x0F, 0x30, 0x36, 0x26,  0x0F, 0x28, 0x18, 0x30,
-                               0x0F, 0x16, 0x06, 0x12,  0x0F, 0x2C, 0x1C, 0x00};
+                               0x0F, 0x16, 0x06, 0x10,  0x0F, 0x2C, 0x1C, 0x00};
     u8 i;
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
     for (i = 0; i < 32; i++) PPUDATA = pal[i & 15];
 }
+void lflush(void);
+extern u8 live;
 void clear_screen(void) {
     u16 i;
+    lflush(); live = 0;                                  /* a new screen ends live mode */
     ppu_off(); ppu_at(0, 0);
     for (i = 0; i < 1024; i++) PPUDATA = 0;
     for (i = 0; i < 64; i++) attr[i] = 0;
@@ -88,15 +91,34 @@ void pal3(u8 a, u8 b) {                      /* palette 3 = cyan by default; gre
 void colour_rows(u8 y0, u8 y1, u8 pal) { colour_cols(y0, y1, 0, 15, pal); }
 
 /* ---- printing ---- */
+/* live mode (the cop fight): text is collected in lb and written in one vblank by lflush(), with the screen on,
+ * instead of blanking the screen for every change.  at() and the end of each update flush it. */
+u8 live;
+static u8 lb[32], lbn, lbx, lby, ad[4], adn;
+void lflush(void) {
+    u8 j;
+    if (!lbn && !adn) return;
+    if (ppu_on) wait_vblank();
+    if (lbn) { ppu_at(lbx, lby); ppu_src = lb; ppu_copy(lbn); }
+    for (j = 0; j < adn; j++) { latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0 + ad[j]; PPUDATA = attr[ad[j]]; }
+    if (ppu_on) { PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0; }
+    lbn = 0; adn = 0;
+}
 void pc(u8 ch) {
-    put(cx, cy, ch);
+    if (live) { if (!lbn) { lbx = cx; lby = cy; } lb[lbn++] = ch; }
+    else put(cx, cy, ch);
     if (ch != ' ') {
         u8 i = (cy >> 2) * 8 + (cx >> 2), sh = ((cy & 2) ? 4 : 0) + ((cx & 2) ? 2 : 0), o = attr[i];
-        if (((o >> sh) & 3) != ink) { attr[i] = (o & ~(3 << sh)) | (ink << sh); attr_dirty = 1; }
+        if (((o >> sh) & 3) != ink) {
+            attr[i] = (o & ~(3 << sh)) | (ink << sh);
+            if (live) { u8 j; for (j = 0; j < adn && ad[j] != i; j++) {} if (j == adn) { if (adn == 4) lflush(); ad[adn++] = i; } }
+            else attr_dirty = 1;
+        }
     }
     cx++;
+    if (live && lbn == 32) lflush();
 }
-void at(u8 x, u8 y) { cx = x; cy = y; }
+void at(u8 x, u8 y) { if (live) lflush(); cx = x; cy = y; }
 void ps(const char* s) { while (*s) pc((u8)*s++); }
 void ps_at(u8 x, u8 y, const char* s) { at(x, y); ps(s); }
 char nb[12];
@@ -530,15 +552,16 @@ u8 yn(void) {                /* A = yes, B = no */
 }
 
 /* a health value in its colour: white at full health, then pink, light red, red and dark red in steps of 25%
- * (palette 0 colours 1-3, palette 2 colours 1-2; the digits in colours 2 and 3 are tiles 0x80-0x93).  w = the
- * width to pad to; dw = show 0 as "dead" */
+ * (palette 0 colours 1-3, palette 2 colours 1-2; the digits in colours 2 and 3 are tiles 0x80-0x93); 0 is grey.
+ * w = the width to pad to; dw = show 0 as a skull */
 void hp_put(i16 hp, i16 max, u8 w, u8 dw) {
     u8 lv, base, l;
     if (hp < 0) hp = 0;
     lv = hp >= max ? 4 : (u8)((hp * 4 + max / 2) / max);
     ink = lv >= 2 ? 0 : 2;
     base = (lv == 3 || lv == 0) ? 0x80 - '0' : lv == 2 ? 0x8A - '0' : 0;
-    if (hp == 0 && dw) { pc(0x94); pc(0x95); pc(0x96); pc(0x94); l = 4; }
+    if (hp == 0) base = 0x8A - '0';                      /* 0: grey (palette 2 colour 3) */
+    if (hp == 0 && dw) { pc(0x9B); pc(0x9C); l = 2; }  /* a fighter at 0: a grey skull, centred like the hit star */
     else { ltoa_s(hp); for (l = 0; nb[l]; l++) pc(nb[l] + base); }
     ink = 0;
     while (l++ < w) pc(' ');
@@ -574,7 +597,6 @@ void draw_main(void) {
     u8 x;
     clear_screen();
     set_palette();
-    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x2A; PPUDATA = 0x1A;   /* the labels green here */
     ps_at(2, 11, "Drug       Price    Have");
     for (x = 0; x < 32; x++) put(x, 10, 0x97);          /* the double line, in white (palette 1 colour 3) */
     colour_rows(10, 11, 1);
@@ -652,7 +674,7 @@ void game(void) {
             if (status >= WIN_STATUS) break;
             if (!music_on) menu_music_start();
             msg_area();
-            ink = 2; ps_at(2, 21, "Buy drugs");          /* the commands red, the arrow blue */
+            ink = 2; ps_at(2, 21, "Buy drugs");          /* the commands and the arrow red */
             ps_at(2, 22, "Sell drugs");
             ps_at(2, 23, "Jet to another city");
             ps_at(2, 24, "Visit de Bank");
@@ -661,7 +683,7 @@ void game(void) {
             ps_at(2, 27, "Quit de game");
             ink = 0;
             colour_cols(20, 27, 0, 0, 2);
-            arrow_t = 0x9A; sel = choose(0, 21, 7, 0); arrow_t = 0x10;
+            sel = choose(0, 21, 7, 0);                   /* the arrow red (its column is palette 2) */
 #ifdef DEBUG
             if (sel == -2) { debug_menu(); draw_main(); continue; }
 #endif

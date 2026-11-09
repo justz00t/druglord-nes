@@ -15,23 +15,24 @@ void fight_row(u8 side, u8 i, i16 hp) {
     else { ps("Cop "); pn_l(i + 1, 4); }
     at(x + 9, y);
     hp_put(hp, side ? cmax[i] : (i ? pmax[i] : 100), 4, 1);
+    lflush();
 }
-void fight_msg(const char* s) { fill(1, fm_y, ' ', 30); fill(1, fm_y + 1, ' ', 30); at(1, fm_y); ink = 2; ps(s); ink = 0; }
+void fight_msg(const char* s) {                         /* two rows of 30, padded (written live in the fight) */
+    u8 r, n;
+    ink = 2;
+    for (r = 0; r < 2; r++) { at(1, fm_y + r); for (n = 0; n < 30; n++) pc(*s ? (u8)*s++ : ' '); }
+    lflush(); ink = 0;
+}
 
-/* the shot messages: built in mb and written over the old one in a single pass (no blank frame between them) */
-static char mb[32];
-static u8 mbl;
-static void mb_s(const char* t) { while (*t && mbl < 30) mb[mbl++] = *t++; }
-static void mb_n(i16 v) { ltoa_s(v); mb_s(nb); }
-static void mb_show(void) {
-    while (mbl < 30) mb[mbl++] = ' ';
-    mb[30] = 0; mbl = 0;
-    ink = 2; ps_at(1, 26, mb); ink = 0;
-}
+/* the shot messages are written over the old one, padded to the full row, in one vblank (live mode) */
+static void mb_start(void) { ink = 2; at(1, 26); }
+#define mb_s ps
+#define mb_n pn
+static void mb_show(void) { while (cx < 31) pc(' '); lflush(); ink = 0; }
 /* a hit: a white star over the health value (centred on its first two digits), then the new value in its colour */
 static void hit_star(u8 side, u8 i) {
     u8 x = side ? 26 : 10, y = 4 + i * 2;
-    ink = 0; at(x, y); pc(0x98); pc(0x99); pc(' '); pc(' ');
+    ink = 0; at(x, y); pc(0x98); pc(0x99); pc(' '); pc(' '); lflush();
     delay(16);
 }
 void cop_fight(void) {
@@ -42,7 +43,7 @@ void cop_fight(void) {
     page();
     ink = 2; ps_at(1, 1, "The cops are on your tail!!!");
     sfx(5);
-    ink = 3; ps_at(1, 3, "Do you wanna");
+    ink = 0; ps_at(1, 3, "Do you wanna");
     ps_at(3, 4, "Go at it alone");
     ps_at(3, 5, "Call a friend (1 status pt.)");
     ps_at(3, 6, "Call a posse (5 status pts.)");
@@ -93,9 +94,10 @@ void cop_fight(void) {
     for (i = 0; i < nc; i++) fight_row(1, i, chp[i]);
     at(1, 24); ps("Guns: "); pn(num_guns); ps(" "); ps(gun_name[gun_type]);
     at(1, 25); ps("Cops: "); ps(gun_name[ct]);
+    ink = 0; ps_at(1, 28, "(F)ight or (R)un?  A=F B=R");
+    colour_rows(26, 27, 2);                              /* the message rows red */
+    live = 1;                                            /* from here on the screen stays on while it changes */
     for (;;) {
-        fill(1, 28, ' ', 30);
-        ink = 0; ps_at(1, 28, "(F)ight or (R)un?  A=F B=R");
         for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
         if (k & BTN_B) {                                 /* run */
             fight_msg("You take off running...");
@@ -113,7 +115,7 @@ void cop_fight(void) {
                     for (;;) {
                         do { t = rnd() % nc; } while (chp[t] == 0);
                         sfx(gun_type + 10);
-                        mb_s(si < num_guns ? "Firing at cop " : "Punching cop "); mb_n(t + 1);
+                        mb_start(); mb_s(si < num_guns ? "Firing at cop " : "Punching cop "); mb_n(t + 1);
                         if (rnd() % 2 == 0) {
                             mb_s(" *Hit!*"); mb_show(); sfx(8);
                             chp[t] -= (si < num_guns) ? dice(6, gun_dice[gun_type]) : dice(4, 1);
@@ -135,7 +137,7 @@ void cop_fight(void) {
                     if (chp[si] == 0) continue;
                     do { t = rnd() % (nf + 1); } while (php[t] == 0);
                     sfx(ct + 10);
-                    mb_s("Cop "); mb_n(si + 1); mb_s(" shoots "); if (t == 0) mb_s("you"); else { mb_s("mate "); mb_n(t); }
+                    mb_start(); mb_s("Cop "); mb_n(si + 1); mb_s(" shoots "); if (t == 0) mb_s("you"); else { mb_s("mate "); mb_n(t); }
                     if (rnd() % 2 == 0) {
                         mb_s(" *Hit!*"); mb_show(); sfx(8);
                         php[t] -= dice(6, gun_dice[ct]);
@@ -150,9 +152,9 @@ void cop_fight(void) {
         }
         if (!(copsAlive > 0 && partyAlive > 0 && php[0] > 0 && result != 1)) break;
     }
-    if (result == 1) { delay(60); return; }
+    if (result == 1) { delay(60); live = 0; return; }
     health = php[0];
-    if (health == 0) { dead = 1; return; }
+    if (health == 0) { dead = 1; live = 0; return; }
     fight_msg("Yous wasted 'em!!! Way ta go, man!!!");
     delay(90);
     page();                                              /* the spoils, on a page of their own */

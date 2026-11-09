@@ -363,8 +363,8 @@ void credits_screen(void) {
     ppu_off();
     latch = PPUSTATUS;
     PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x0F;      /* palette 1 (the red lines): black for now */
-    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x2A;      /* palette 3: green */
-    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x2A;      /* sprite palette 0: green */
+    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x12;      /* palette 3: blue */
+    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x12;      /* sprite palette 0: blue */
     for (i = 0; i < 20; i++) if (cr_text[i] != ' ') ord[n++] = i;
     for (i = n - 1; i > 0; i--) { j = rnd() % (i + 1); t = ord[i]; ord[i] = ord[j]; ord[j] = t; }   /* a random order */
     for (i = 0; i < 20; i++) { st[i] = 0; y[i] = 0; v[i] = 0; }
@@ -398,7 +398,7 @@ void credits_screen(void) {
     }
     PPUMASK = 0x0A;                                      /* sprites off again */
     cr_wait(15);
-    vb_pal(0x0D, 0x30); cr_wait(6); vb_pal(0x0D, 0x2A);  /* the green line flashes */
+    vb_pal(0x0D, 0x30); cr_wait(6); vb_pal(0x0D, 0x12);  /* the blue line flashes */
     cr_wait(20);
     vb_pal(0x05, 0x0F); cr_wait(8);                      /* the red lines fade in, then flash */
     vb_pal(0x05, 0x06); cr_wait(8);

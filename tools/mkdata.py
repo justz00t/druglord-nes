@@ -27,6 +27,11 @@ star = glyph(ord('*'), 1)
 extra += [bytes(b >> 4 for b in star), bytes((b << 4) & 0xFF for b in star)]
 #   0x9A the menu arrow in colour 3 (blue, palette 2) for the main menu
 extra += [glyph(0x10, 3)]
+#   0x9B-0x9C a skull in colour 3 (grey, palette 2) split over two tiles like the star: a fighter at 0 health
+SKULL = ['.XXXXX..', 'XXXXXXX.', 'X..X..X.', 'X..X..X.', 'XXXXXXX.', '.XX.XX..', '.XXXXX..', '.X.X.X..']
+sk = [sum(0x80 >> i for i, c in enumerate(r) if c == 'X') << 3 for r in SKULL]    # 7 wide: columns 5-11 of the pair
+L = [b >> 8 for b in sk]; R = [b & 0xFF for b in sk]
+extra += [bytes(L + L), bytes(R + R)]
 for i, g in enumerate(extra): t0[(0x80 + i) * 16:(0x81 + i) * 16] = g
 t0 = bytes(t0)
 

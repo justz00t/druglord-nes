@@ -25,6 +25,8 @@ extra = [glyph(ord(c), 2) for c in '0123456789'] + [glyph(ord(c), 3) for c in '0
 #   0x98-0x99 a star split over two tiles (centred between them): the hit flash in a cop fight
 star = glyph(ord('*'), 1)
 extra += [bytes(b >> 4 for b in star), bytes((b << 4) & 0xFF for b in star)]
+#   0x9A the menu arrow in colour 3 (blue, palette 2) for the main menu
+extra += [glyph(0x10, 3)]
 for i, g in enumerate(extra): t0[(0x80 + i) * 16:(0x81 + i) * 16] = g
 t0 = bytes(t0)
 

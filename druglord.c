@@ -49,9 +49,9 @@ void clear_rows(u8 y0, u8 y1) {      /* inclusive */
 }
 void set_palette(void) {
     /* 0: white text, colours 2-3 the health colours pink and light red; 1: yellow, colour 3 white (the line);
-     * 2: red, colour 2 dark red (health); 3: cyan */
+     * 2: red, colour 2 dark red (health), colour 3 blue (the main-menu arrow); 3: cyan */
     static const u8 pal[16] = {0x0F, 0x30, 0x36, 0x26,  0x0F, 0x28, 0x18, 0x30,
-                               0x0F, 0x16, 0x06, 0x00,  0x0F, 0x2C, 0x1C, 0x00};
+                               0x0F, 0x16, 0x06, 0x12,  0x0F, 0x2C, 0x1C, 0x00};
     u8 i;
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
@@ -546,7 +546,7 @@ void hp_put(i16 hp, i16 max, u8 w, u8 dw) {
 
 /* ---- main screen ---- */
 /* the status block: labels in yellow (columns 1-7), values in white from column 8 (health in its colour); drug names
- * cyan, prices white */
+ * and prices white */
 static void label(u8 y, const char* s) { ink = 1; ps_at(1, y, s); ink = 0; at(8, y); }
 void draw_status(void) {
     u8 i;
@@ -565,7 +565,7 @@ void draw_status(void) {
     label(8, "Hold:"); pn_l(space, 4); ps("("); pn(hold); ps(" max) ");
     label(9, "Guns:"); pn_l(num_guns, 3); ps_pad(gun_name[gun_type], 14);
     for (i = 0; i < NUM_DRUGS; i++) {
-        ink = 3; at(2, ROW_DRUGS + i); ps_pad(drug_name[i], 8);
+        ink = 0; at(2, ROW_DRUGS + i); ps_pad(drug_name[i], 8);
         ink = 0; at(10, ROW_DRUGS + i); pc('$'); pn_r(price[i], 6);
         ink = 0; at(17, ROW_DRUGS + i); pn_r(inv[i], 8);
     }
@@ -582,10 +582,11 @@ void draw_main(void) {
 }
 
 /* choose one entry of a list (rows y..y+n-1, cursor in column x); B = cancel (-1) */
+u8 arrow_t = 0x10;              /* the arrow tile choose() draws (0x9A = the blue one of the main menu) */
 i16 choose(u8 x, u8 y, u8 n, i16 start) {
     i16 s = start, o = start;
     u8 e, i;
-    for (i = 0; i < n; i++) put(x, y + i, i == s ? 0x10 : ' ');
+    for (i = 0; i < n; i++) put(x, y + i, i == s ? arrow_t : ' ');
     for (;;) {
         e = wait_btn();
 #ifdef DEBUG
@@ -599,7 +600,7 @@ i16 choose(u8 x, u8 y, u8 n, i16 start) {
         else if (e & BTN_DOWN) s = s + 1 < n ? s + 1 : 0;
         else if (e & BTN_A) { put(x, y + s, ' '); sfx(2); return s; }
         else if (e & BTN_B) { for (i = 0; i < n; i++) put(x, y + i, ' '); return -1; }
-        if (o != s) { put2(x, y + o, ' ', x, y + s, 0x10); sfx(20); }
+        if (o != s) { put2(x, y + o, ' ', x, y + s, arrow_t); sfx(20); }
     }
 }
 
@@ -651,7 +652,7 @@ void game(void) {
             if (status >= WIN_STATUS) break;
             if (!music_on) menu_music_start();
             msg_area();
-            ink = 3; ps_at(2, 21, "Buy drugs");
+            ink = 2; ps_at(2, 21, "Buy drugs");          /* the commands red, the arrow blue */
             ps_at(2, 22, "Sell drugs");
             ps_at(2, 23, "Jet to another city");
             ps_at(2, 24, "Visit de Bank");
@@ -659,7 +660,8 @@ void game(void) {
             ps_at(2, 26, "Go to de Hospital");
             ps_at(2, 27, "Quit de game");
             ink = 0;
-            sel = choose(0, 21, 7, 0);
+            colour_cols(20, 27, 0, 0, 2);
+            arrow_t = 0x9A; sel = choose(0, 21, 7, 0); arrow_t = 0x10;
 #ifdef DEBUG
             if (sel == -2) { debug_menu(); draw_main(); continue; }
 #endif

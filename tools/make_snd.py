@@ -412,6 +412,40 @@ for b in range(8):
     t.drums(b, 'k.h.s.h.k.h.s.hh', 108)
 t.save('song_fight8', 32)
 
+# --- 9-12: riffs off track 2 (trap / drill, A minor, 150 BPM) with the lead dropped low - fewer high notes ---
+def trap_track(name, lead, inst=SAW, drums=('k.hhs.h.k.hhs.hh', 'k.hhs.h.k.hssssss'[:16])):
+    t = Tune(150); t.prog(1, inst); t.prog(2, SQUARE)
+    B = bars('A1 - - - A1 - A2 - E2 - - - A1 - - -',
+             'A1 - - - A1 - A2 - F2 - - - G2 - - -')
+    for b in range(8):
+        t.line(1, b, lead[b % 4], V(12), unit=0.25, gate=0.9)
+        t.line(3, b, B[b % 2], 110, unit=0.25, gate=0.85)
+        t.note(2, b * 4 + 2, 0.3, N('A3'), V(6))          # a low stab
+        t.drums(b, drums[1] if b % 4 == 3 else drums[0], 104)
+    t.save(name, 32)
+
+trap_track('song_fight9', bars(                           # low and menacing
+    'A3 - - - - - C4 - A3 - - - E3 - - -',
+    '. . A3 - C4 - D4 - C4 - A3 - E3 - - -',
+    'A3 - - - C4 - - - E4 - - - D4 - C4 -',
+    'E4 - D4 - C4 - A3 - E3 - - - . . . .'))
+trap_track('song_fight10', bars(                          # darker drill, a blue note
+    'A3 - - - A3 - C4 - E4 - D4 - C4 - - -',
+    'A3 - - - A3 - C4 - D4 - - - E3 - - -',
+    'C4 - - - D4 - C4 - A3 - - - G3 - - -',
+    'A3 - - - - - - - E3 - G3 - A3 - - -'), inst=SQUARE)
+trap_track('song_fight11', bars(                          # minimal and hypnotic, lots of space
+    'A3 - - - - - - - C4 - - - - - - -',
+    'A3 - - - - - - - E3 - - - D4 - - -',
+    'A3 - - - - - C4 - D4 - - - - - - -',
+    'C4 - - - A3 - - - E3 - - - - - - -'))
+trap_track('song_fight12', bars(                          # harder, faster hats
+    'A3 A3 - C4 - A3 - E3 A3 A3 - C4 - D4 - -',
+    'A3 A3 - C4 - D4 - E4 D4 - C4 - A3 - - -',
+    'A3 A3 - E4 - D4 - C4 A3 - - - G3 - - -',
+    'E4 - D4 - C4 - A3 - E3 - G3 - A3 - - -'), inst=SQUARE,
+    drums=('k.hhs.hhk.hhs.hh', 'k.hssssss.hsssss'))
+
 # ---- Guido's boys: slow and heavy, D minor
 t = Tune(72); t.prog(1, REED); t.prog(2, STRINGS)
 bass = ['D2 - . D2 . . A1 -', 'D2 - . D2 . . C2 -', 'Bb1 - . Bb1 . . A1 -', 'A1 - . A1 A1 . C#2 -']
@@ -463,7 +497,7 @@ import shutil
 # tools/snd/song_fight.mid and built into the ROM.  To switch tracks, change DEFAULT_FIGHT below and rerun.
 DEFAULT_FIGHT = 1
 ftdir = os.path.join(here, 'fight_tracks'); os.makedirs(ftdir, exist_ok=True)
-for i in range(1, 9):
+for i in range(1, 13):
     shutil.move(os.path.join(snd, 'song_fight%d.mid' % i), os.path.join(ftdir, 'fight%d.mid' % i))
 shutil.copy(os.path.join(ftdir, 'fight%d.mid' % DEFAULT_FIGHT), os.path.join(snd, 'song_fight.mid'))
 print('make_snd: fight candidates in tools/fight_tracks; song_fight.mid = fight%d' % DEFAULT_FIGHT)

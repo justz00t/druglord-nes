@@ -495,7 +495,7 @@ print('make_snd: wrote', len([f for f in os.listdir(snd) if f.endswith('.mid')])
 import shutil
 # The six cop-fight candidates are kept in tools/fight_tracks (not compiled); only the chosen one is copied to
 # tools/snd/song_fight.mid and built into the ROM.  To switch tracks, change DEFAULT_FIGHT below and rerun.
-DEFAULT_FIGHT = 1
+DEFAULT_FIGHT = 9
 ftdir = os.path.join(here, 'fight_tracks'); os.makedirs(ftdir, exist_ok=True)
 for i in range(1, 13):
     shutil.move(os.path.join(snd, 'song_fight%d.mid' % i), os.path.join(ftdir, 'fight%d.mid' % i))

@@ -254,7 +254,7 @@ s.save('sfx_win')
 
 # the credits (bank_b.c): the Erwin block drops in with a cartoon fall, each justz00t letter is a rain drop
 s = Sfx(); s.prog(2, ORGAN)                                # the block falls: a cartoon slide whistle down
-s.sweep(2, 0, geo(1500, 300, 30), 10)
+s.sweep(2, 0, geo(1800, 150, 60), 10)
 s.save('sfx_credfall')
 
 s = Sfx(); s.prog(2, SQUARE)                               # ...and lands: a boing and a thud

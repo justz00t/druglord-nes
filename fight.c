@@ -38,23 +38,41 @@ static void hit_star(u8 side, u8 i) {
 /* The "cops are on your tail" screen, on its own: police lights flash red on the left half, then blue on the
  * right, back and forth, half the screen at a time, while "THE COPS ARE ON YOUR TAIL!!!" flashes white in the
  * middle.  Shown for a couple of seconds (A or START skips it); the siren wails and the fight music starts. */
+#define OAM ((u8*)0x0200)                              /* the sprite buffer, DMA'd to the PPU each frame */
+/* The "cops are on your tail" screen, on its own: police lights flash red on the left half, then blue on the
+ * right, back and forth, half the screen at a time, over the WHOLE screen; the title is white, overlaid on top
+ * of the flashing field as sprites (stacked in short lines so no scanline has more than 8 sprites - no flicker).
+ * A or START skips it; the siren wails; no music until the fight itself. */
 static void cops_lights(void) {
-    u8 y, f, e;
+    static const char* const tl[4] = {"THE COPS", "ARE ON", "YOUR", "TAIL!!!"};
+    u8 y, f, e, i, j, len, n, sx;
     page();
-    for (y = 0; y <= 13; y++) fill(0, y, 8, 32);         /* solid blocks fill everything but the title band */
-    for (y = 16; y <= 29; y++) fill(0, y, 8, 32);
-    ink = 0; ps_at(2, 14, "THE COPS ARE ON YOUR TAIL!!!");   /* 28 chars, centred, in the middle */
-    colour_cols(0, 13, 0, 7, 0);  colour_cols(0, 13, 8, 15, 1);    /* left half palette 0, right half palette 1 */
-    colour_cols(16, 29, 0, 7, 0); colour_cols(16, 29, 8, 15, 1);
-    colour_rows(14, 15, 3);                              /* the title band (its own attribute block: no bleed) */
+    for (y = 0; y <= 29; y++) fill(0, y, 8, 32);         /* solid blocks fill the whole screen: the flashing field */
+    colour_cols(0, 29, 0, 7, 0); colour_cols(0, 29, 8, 15, 1);    /* left half palette 0, right half palette 1 */
+    for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;          /* the title, as white sprites over the field */
+    n = 0;
+    for (i = 0; i < 4; i++) {
+        for (len = 0; tl[i][len]; len++) {}
+        sx = (256 - len * 8) / 2;                        /* centred */
+        for (j = 0; j < len; j++) {
+            OAM[n * 4] = 95 + i * 8;                     /* rows 12-15 (sprite y is screen y - 1) */
+            OAM[n * 4 + 1] = (u8)tl[i][j];
+            OAM[n * 4 + 2] = 0x00;                       /* sprite palette 0, in front */
+            OAM[n * 4 + 3] = sx + j * 8;
+            n++;
+        }
+    }
     ppu_off();
     latch = PPUSTATUS;
     PPUADDR = 0x3F; PPUADDR = 0x00; PPUDATA = 0x0F;      /* backdrop black */
-    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x30;      /* palette 3 colour 1: solid white (the title) */
+    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x30;      /* sprite palette 0 colour 1: white */
     ppu_show();
+    APU(0x14) = 0x02;                                    /* OAM DMA from $0200 */
+    PPUMASK = 0x1E;                                      /* background + sprites */
     seq_sfx(SFX_SIREN);                                  /* the siren wails; no music until the fight itself */
     for (f = 0; f < 150; f++) {
         wait_vblank(); frames++;
+        APU(0x14) = 0x02;                                /* keep the sprites up */
         latch = PPUSTATUS;
         if (f & 8) { PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = 0x0F; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x11; }  /* right half blue */
         else       { PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = 0x16; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x0F; }  /* left half red */
@@ -63,6 +81,7 @@ static void cops_lights(void) {
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
         if (e & (BTN_A | BTN_START)) break;
     }
+    PPUMASK = 0x0A;                                      /* sprites off before leaving */
 }
 
 void cop_fight(void) {

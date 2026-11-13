@@ -352,45 +352,47 @@ static void vb_pal(u8 a, u8 v) {     /* set one palette entry during vblank, the
 }
 static void cr_wait(u8 n) { while (n--) { wait_vblank(); frames++; } }
 void credits_screen(void) {
+    static const char* const bl[3] = {"Written by Phil Erwin", "Copyright 1991-93", "FantasyWare Inc."};
+    static const u8 bcol[3] = {5, 7, 8};
+    static const u8 blen[3] = {21, 17, 16};
+    static const char blank[] = "                     ";   /* 21 spaces, to clear a row */
     u8 ord[20], n = 0, i, j, t, k, done = 0, land_n, land[4];
-    u16 y[20], v[20];                /* each letter's top in 1/16 pixels, its speed in 1/16 pixels a frame */
-    u8 st[20];                       /* 0 waiting, 1 falling, 2 landed */
-    u16 sx, vel;                     /* the Erwin block's scroll (1/16 pixel) and speed as it drops in */
-    static const u8 bounce[12] = {5, 5, 0, 0, 3, 3, 0, 0, 1, 1, 0, 0};   /* the landing shake */
-    clear_screen(); set_palette();
-    ps_at(5, 8, "Written by Phil Erwin");
-    ps_at(7, 10, "Copyright 1991-93");
-    ps_at(8, 12, "FantasyWare Inc.");
-    colour_rows(8, 13, 1); colour_rows(16, 17, 3);
+    u16 y[20], v[20];
+    u8 st[20];
+    signed char top, r;
+    clear_screen();
+    colour_rows(0, 29, 1);                               /* the whole field is palette 1 */
     ppu_off();
     latch = PPUSTATUS;
-    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x16;      /* palette 1 (the Erwin block): red, seen as it falls */
-    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x12;      /* palette 3: blue */
-    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x12;      /* sprite palette 0: blue */
+    PPUADDR = 0x3F; PPUADDR = 0x00; PPUDATA = 0x0F;      /* backdrop black */
+    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x16;      /* palette 1: red (the Erwin block as it falls) */
+    PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x12;      /* sprite palette 0: blue (the justz00t letters) */
     for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;
-    APU(0x14) = 0x02;                                    /* no stray sprites */
-    /* ---- the Erwin block drops in as one piece, from above the screen, by scrolling the whole screen down ---- */
-    sx = 64 << 4; vel = 0;                               /* start at the top edge (scrolling past 64 would wrap the block to the bottom) */
-    wait_vblank(); frames++;                             /* turn the screen on already scrolled up, so it enters from the top */
-    PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 64;
+    APU(0x14) = 0x02;
+    wait_vblank(); frames++;
+    PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 0;
     PPUMASK = 0x0A; ppu_on = 1;
-    seq_sfx(SFX_CREDFALL);                               /* the cartoon slide whistle */
-    while (sx) {
-        wait_vblank(); frames++;
-        vel += 8; if (vel > sx) vel = sx; sx -= vel;     /* gravity */
-        latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = (u8)(sx >> 4);
+    /* ---- the Erwin block falls from the top, straight down and off the bottom, removed from view.  Each row of
+     *      the move is spread over two frames (clear + top line, then the lower two lines) so a vblank is never
+     *      asked to copy more tiles than it can before rendering resumes - that overrun corrupts the CHR. ---- */
+    seq_sfx(SFX_CREDFALL);                               /* the full-length cartoon fall */
+    for (top = -3; top <= 30; top++) {
+        wait_vblank(); frames++;                         /* frame 1: clear the vacated row, draw the top line */
+        latch = PPUSTATUS;
+        if (top >= 1 && top <= 30) { ppu_at(5, (u8)(top - 1)); ppu_src = (const u8*)blank; ppu_copy(21); }
+        if (top >= 0 && top <= 29) { ppu_at(bcol[0], (u8)top); ppu_src = (const u8*)bl[0]; ppu_copy(blen[0]); }
+        PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
+        music_update();
+        wait_vblank(); frames++;                         /* frame 2: the lower two lines */
+        latch = PPUSTATUS;
+        r = top + 1; if (r >= 0 && r <= 29) { ppu_at(bcol[1], (u8)r); ppu_src = (const u8*)bl[1]; ppu_copy(blen[1]); }
+        r = top + 2; if (r >= 0 && r <= 29) { ppu_at(bcol[2], (u8)r); ppu_src = (const u8*)bl[2]; ppu_copy(blen[2]); }
+        PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
         music_update();
     }
-    seq_sfx(SFX_CREDLAND);                               /* the boing + thud */
-    for (k = 0; k < 12; k++) {                           /* the block shakes where it lands */
-        wait_vblank(); frames++;
-        latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = bounce[k];
-        music_update();
-    }
-    latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
-    vb_pal(0x05, 0x30); cr_wait(5); vb_pal(0x05, 0x16);  /* a flash as it settles */
-    cr_wait(18);
-    /* ---- "NES port by justz00t" rains in, letter by letter, a rain drop for each ---- */
+    cr_wait(12);
+    /* ---- "NES port by justz00t" rains in, letter by letter (palette 1, now blue) ---- */
+    vb_pal(0x05, 0x12);                                  /* palette 1 -> blue for the justz00t line */
     for (i = 0; i < 20; i++) if (cr_text[i] != ' ') ord[n++] = i;
     for (i = n - 1; i > 0; i--) { j = rnd() % (i + 1); t = ord[i]; ord[i] = ord[j]; ord[j] = t; }   /* a random order */
     for (i = 0; i < 20; i++) { st[i] = 0; y[i] = 0; v[i] = 0; }
@@ -404,7 +406,7 @@ void credits_screen(void) {
             i = ord[k];
             if (st[i] != 1) { OAM[k * 4] = 0xFF; continue; }
             v[i] += 8; y[i] += v[i];
-            if (y[i] >= (u16)(CR_ROW * 8 + 8) * 16) {     /* landed (the letter started 8 pixels above the screen) */
+            if (y[i] >= (u16)(CR_ROW * 8 + 8) * 16) {     /* landed */
                 st[i] = 2; done++; OAM[k * 4] = 0xFF;
                 if (land_n < 4) land[land_n++] = i;
                 continue;
@@ -413,7 +415,7 @@ void credits_screen(void) {
             OAM[k * 4 + 1] = (u8)cr_text[i]; OAM[k * 4 + 2] = 0; OAM[k * 4 + 3] = (CR_X + i) * 8;
         }
         wait_vblank(); frames++;
-        APU(0x14) = 0x02;                                /* sprite DMA from $0200 */
+        APU(0x14) = 0x02;
         latch = PPUSTATUS;
         for (j = 0; j < land_n; j++) {
             PPUADDR = 0x22; PPUADDR = (CR_ROW - 16) * 32 + CR_X + land[j]; PPUDATA = (u8)cr_text[land[j]];
@@ -423,7 +425,7 @@ void credits_screen(void) {
     }
     PPUMASK = 0x0A;                                      /* sprites off again */
     cr_wait(15);
-    vb_pal(0x0D, 0x30); cr_wait(6); vb_pal(0x0D, 0x12);  /* the blue line flashes */
+    vb_pal(0x05, 0x30); cr_wait(6); vb_pal(0x05, 0x12);  /* the justz00t line flashes */
     cr_wait(120);
 }
 

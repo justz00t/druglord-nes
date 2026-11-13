@@ -333,9 +333,7 @@ void exit_screen(void) {
     music_stop();
 }
 
-#ifdef DEBUG
 void debug_menu(void);
-#endif
 
 
 /* shown for 4 seconds before the title screen */
@@ -533,9 +531,10 @@ void title_wait(void) {
     }
 }
 
-#ifdef DEBUG
 /* ======================================================================== */
-/*  Debug build only: SELECT+START in the main menu opens this menu         */
+/*  The debug menu: SELECT+START (or the Konami code) in the main menu       */
+/*  opens it.  In the plain build the Konami code unlocks it; the debug      */
+/*  build has it unlocked from the start.                                    */
 /* ======================================================================== */
 /* the sound test: every effect and every piece of music the MIDI player has (the names are the file names in
  * tools/snd), 20 to a page, then the title tune and the easter-egg song.  A plays one (music until B), B leaves. */
@@ -621,5 +620,4 @@ void debug_menu(void) {
         if (health <= 0) health = 100;
     }
 }
-#endif
 

@@ -518,6 +518,10 @@ void draw_main(void) {
 }
 
 /* choose one entry of a list (rows y..y+n-1, cursor in column x); B = cancel (-1) */
+u8 cheat;                       /* the debug menu is unlocked (always 1 in the debug build; the Konami code sets it) */
+/* the Konami code (main menu): up up down down left right left right B A -> the debug menu */
+static const u8 konami[10] = {BTN_UP, BTN_UP, BTN_DOWN, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_LEFT, BTN_RIGHT, BTN_B, BTN_A};
+static u8 kidx;
 u8 arrow_t = 0x10;              /* the arrow tile choose() draws */
 i16 choose(u8 x, u8 y, u8 n, i16 start) {
     i16 s = start, o = start;
@@ -526,12 +530,13 @@ i16 choose(u8 x, u8 y, u8 n, i16 start) {
     colour_blk(y, y + n - 1, x >> 1, 2);                /* the arrow is red everywhere */
     for (;;) {
         e = wait_btn();
-#ifdef DEBUG
-        if ((pad_old & (BTN_SELECT | BTN_START)) == (BTN_SELECT | BTN_START)) {      /* debug build: SELECT+START */
+        if (e & konami[kidx]) {                          /* the Konami code unlocks and opens the debug menu */
+            if (++kidx == 10) { kidx = 0; cheat = 1; for (i = 0; i < n; i++) put(x, y + i, ' '); return -2; }
+        } else kidx = (e & konami[0]) ? 1 : 0;
+        if (cheat && (pad_old & (BTN_SELECT | BTN_START)) == (BTN_SELECT | BTN_START)) {   /* the quick way, once unlocked */
             for (i = 0; i < n; i++) put(x, y + i, ' ');
             return -2;
         }
-#endif
         o = s;
         if (e & BTN_UP) s = s ? s - 1 : n - 1;
         else if (e & BTN_DOWN) s = s + 1 < n ? s + 1 : 0;
@@ -599,9 +604,7 @@ void game(void) {
             ps_at(2, 27, "Quit de game");
             ink = 0;
             sel = choose(0, 21, 7, 0);
-#ifdef DEBUG
             if (sel == -2) { debug_menu(); draw_main(); continue; }
-#endif
             if (sel < 0) continue;
             switch (sel) {
             case 0: adv = menu_buy(); break;
@@ -673,6 +676,9 @@ void load_pt1(u8 set) {
 }
 
 void main(void) {
+#ifdef DEBUG
+    cheat = 1;                             /* the debug build has the debug menu from the start */
+#endif
     PPUCTRL = 0x80; PPUMASK = 0;           /* NMI on from the start (wait_vblank counts on it) */
     load_font();
     wait_vblank(); wait_vblank();

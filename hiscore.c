@@ -52,7 +52,7 @@ static void hs_insert(u8 pos, const char* nm, u32 s) {
 }
 
 /* ---- the table's colours: palette 0 white (the headings, "Press A to continue"), 1 solid blue (the lines),
- *      2 the title pulsing light red to dark red, 3 the new entry flashing blue and white. ---- */
+ *      2 the title pulsing light red to dark red; every score line is the same solid blue. ---- */
 static const u8 reds[6] = {0x36, 0x26, 0x16, 0x06, 0x16, 0x26};   /* light red to dark red and back */
 #define HS_BLUE 0x12
 static void pal_set3(u8 a, u8 b, u8 c) {               /* call right after wait_vblank() */
@@ -90,8 +90,8 @@ static void hs_draw(u8 hl, u8 press) {
     ps_at(1, 3, "NO"); ps_at(5, 3, "NAME"); ps_at(12, 3, "SCORE"); ps_at(18, 3, "RANK");
     if (press) ps_at(1, 27, "Press A to continue");
     colour_rows(0, 1, 2);                              /* the title: cycling */
-    colour_rows(4, 25, 1);                             /* the lines: blue */
-    if (hl < NHS) colour_rows(4 + 2 * hl, 5 + 2 * hl, 3);   /* the new entry: flashing */
+    colour_rows(4, 25, 1);                             /* every score line: the same blue */
+    (void)hl;                                         /* every line is the same solid blue */
 }
 /* the fall; f is the frame counter shared with the caller's colour cycling.  Returns the buttons pressed. */
 static u8 hs_fall(u8* f, u8 btns) {
@@ -208,7 +208,7 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
         if (e & BTN_A) { if (cur < 2) { cur++; entry_letters(nm, cur); } else go = 1; }
         if (e & BTN_START) go = 1;
     }
-    pal_default();
+    wait_vblank(); pal_set3(0x36, HS_BLUE, 0x2A);    /* keep the instructions green (not pal_default's turquoise) */
     sfx(SFX_DEAL);
     hs_insert(pos, nm, score);
     hs_show(pos);

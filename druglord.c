@@ -49,9 +49,9 @@ void clear_rows(u8 y0, u8 y1) {      /* inclusive */
 }
 void set_palette(void) {
     /* 0: white text, colours 2-3 the health colours pink and light red; 1: yellow, colour 3 white (the line);
-     * 2: red, colour 2 dark red (health), colour 3 grey (0 health); 3: blue */
+     * 2: red, colour 2 dark red (health), colour 3 white (the skull); 3: blue */
     static const u8 pal[16] = {0x0F, 0x30, 0x36, 0x26,  0x0F, 0x28, 0x18, 0x30,
-                               0x0F, 0x16, 0x06, 0x10,  0x0F, 0x12, 0x02, 0x00};
+                               0x0F, 0x16, 0x06, 0x30,  0x0F, 0x12, 0x02, 0x00};
     u8 i;
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
@@ -474,8 +474,8 @@ void hp_put(i16 hp, i16 max, u8 w, u8 dw) {
     lv = hp >= max ? 4 : (u8)((hp * 4 + max / 2) / max);
     ink = lv >= 2 ? 0 : 2;
     base = (lv == 3 || lv == 0) ? 0x80 - '0' : lv == 2 ? 0x8A - '0' : 0;
-    if (hp == 0) base = 0x8A - '0';                      /* 0: grey (palette 2 colour 3) */
-    if (hp == 0 && dw) { pc(0x9B); pc(0x9C); l = 2; }  /* a fighter at 0: a grey skull, centred like the hit star */
+    if (hp == 0) base = 0x8A - '0';                      /* 0: white (palette 2 colour 3) */
+    if (hp == 0 && dw) { pc(0x9B); pc(0x9C); l = 2; }  /* a fighter at 0: a white skull, centred like the hit star */
     else { ltoa_s(hp); for (l = 0; nb[l]; l++) pc(nb[l] + base); }
     ink = 0;
     while (l++ < w) pc(' ');

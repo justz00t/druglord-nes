@@ -357,6 +357,8 @@ void credits_screen(void) {
     u8 ord[20], n = 0, i, j, t, k, done = 0, land_n, land[4];
     u16 y[20], v[20];                /* each letter's top in 1/16 pixels, its speed in 1/16 pixels a frame */
     u8 st[20];                       /* 0 waiting, 1 falling, 2 landed */
+    u16 sx, vel;                     /* the Erwin block's scroll (1/16 pixel) and speed as it drops in */
+    static const u8 bounce[12] = {5, 5, 0, 0, 3, 3, 0, 0, 1, 1, 0, 0};   /* the landing shake */
     clear_screen(); set_palette();
     ps_at(5, 8, "Written by Phil Erwin");
     ps_at(7, 10, "Copyright 1991-93");
@@ -364,19 +366,41 @@ void credits_screen(void) {
     colour_rows(8, 13, 1); colour_rows(16, 17, 3);
     ppu_off();
     latch = PPUSTATUS;
-    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x0F;      /* palette 1 (the red lines): black for now */
+    PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x16;      /* palette 1 (the Erwin block): red, seen as it falls */
     PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x12;      /* palette 3: blue */
     PPUADDR = 0x3F; PPUADDR = 0x11; PPUDATA = 0x12;      /* sprite palette 0: blue */
+    for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;
+    APU(0x14) = 0x02;                                    /* no stray sprites */
+    /* ---- the Erwin block drops in as one piece, from above the screen, by scrolling the whole screen down ---- */
+    sx = 120 << 4; vel = 0;
+    wait_vblank(); frames++;                             /* turn the screen on already scrolled up, so it enters from the top */
+    PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 120;
+    PPUMASK = 0x0A; ppu_on = 1;
+    seq_sfx(SFX_CREDFALL);                               /* the cartoon slide whistle */
+    while (sx) {
+        wait_vblank(); frames++;
+        vel += 8; if (vel > sx) vel = sx; sx -= vel;     /* gravity */
+        latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = (u8)(sx >> 4);
+        music_update();
+    }
+    seq_sfx(SFX_CREDLAND);                               /* the boing + thud */
+    for (k = 0; k < 12; k++) {                           /* the block shakes where it lands */
+        wait_vblank(); frames++;
+        latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = bounce[k];
+        music_update();
+    }
+    latch = PPUSTATUS; PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
+    vb_pal(0x05, 0x30); cr_wait(5); vb_pal(0x05, 0x16);  /* a flash as it settles */
+    cr_wait(18);
+    /* ---- "NES port by justz00t" rains in, letter by letter, a rain drop for each ---- */
     for (i = 0; i < 20; i++) if (cr_text[i] != ' ') ord[n++] = i;
     for (i = n - 1; i > 0; i--) { j = rnd() % (i + 1); t = ord[i]; ord[i] = ord[j]; ord[j] = t; }   /* a random order */
     for (i = 0; i < 20; i++) { st[i] = 0; y[i] = 0; v[i] = 0; }
     for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;
-    APU(0x14) = 0x02;                                    /* no stray sprites on the first frame */
-    ppu_show();
+    APU(0x14) = 0x02;
     PPUMASK = 0x1E;                                      /* sprites on */
     for (t = 0; done < n; t++) {
-        /* start a letter every 6 frames; move the falling ones (gravity: half a pixel a frame, every frame) */
-        if (t % 6 == 0 && t / 6 < n) st[ord[t / 6]] = 1;
+        if (t % 6 == 0 && t / 6 < n) { st[ord[t / 6]] = 1; seq_sfx(SFX_DROP); }   /* a drop as each letter starts */
         land_n = 0;
         for (k = 0; k < n; k++) {
             i = ord[k];
@@ -397,15 +421,11 @@ void credits_screen(void) {
             PPUADDR = 0x22; PPUADDR = (CR_ROW - 16) * 32 + CR_X + land[j]; PPUDATA = (u8)cr_text[land[j]];
         }
         PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
+        music_update();
     }
     PPUMASK = 0x0A;                                      /* sprites off again */
     cr_wait(15);
     vb_pal(0x0D, 0x30); cr_wait(6); vb_pal(0x0D, 0x12);  /* the blue line flashes */
-    cr_wait(20);
-    vb_pal(0x05, 0x0F); cr_wait(8);                      /* the red lines fade in, then flash */
-    vb_pal(0x05, 0x06); cr_wait(8);
-    vb_pal(0x05, 0x16); cr_wait(14);
-    vb_pal(0x05, 0x30); cr_wait(6); vb_pal(0x05, 0x16);
     cr_wait(120);
 }
 

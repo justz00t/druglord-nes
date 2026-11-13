@@ -112,13 +112,10 @@ for i, k in enumerate(('E5', 'G5', 'A5', 'B5')): s.n(2, 16 + i * 4, 4, k, 10)
 s.n(2, 32, 12, 'D6', 11)
 s.save('sfx_tip')
 
-# EXTRA! EXTRA!: the news-wire xylophone, tap-tap-taaap eight times on one note with a mallet tick, then a ringing
-# octave (the sting the game has had, now as MIDI)
+# EXTRA! EXTRA!: the news-wire xylophone - the same tap-tap-taaap figure on one note, all the way through
 s = Sfx(); s.prog(2, XYLO); f = 0
-for i in range(8):
-    for gap in (5, 5, 10): s.n(2, f, gap, 'E6', 13); s.nz(f, 2, 4, 1, True); f += gap
-s.prog(2, BELL, f * F); s.prog(1, BELL, f * F)
-s.n(2, f, 50, 'E6', 15); s.n(1, f, 50, 'E7', 15)
+for i in range(9):
+    for gap in (5, 5, 10): s.n(2, f, 4, 'E6', 13); s.nz(f, 2, 4, 1, True); f += gap
 s.save('sfx_extra')
 
 s = Sfx(); s.prog(2, ORGAN)                                # a bullet lands: a thud
@@ -201,13 +198,10 @@ for i, k in enumerate(('G5', 'B5', 'D6', 'G6', 'D6')): s.n(2, i * 3, 3, k, 11)
 s.n(2, 15, 10, 'G6', 12)
 s.save('sfx_cheap')
 
-s = Sfx(); s.prog(2, BRASS)                                # the brownies: "wah, wah, wah, waaah"
-fr = []
-for k, d in (('Bb4', 12), ('A4', 12), ('Ab4', 12)):
-    f0 = 440 * 2 ** ((N(k) - 69) / 12); fr += [f0] * (d - 4) + geo(f0, f0 * 0.94, 4)
-f0 = 440 * 2 ** ((N('G4') - 69) / 12)
-fr += [f0 * 2 ** ((0.35 * math.sin(i * 0.55) - i * 0.03) / 12) for i in range(34)]
-s.sweep(2, 0, fr, 11)
+s = Sfx(); s.prog(2, STRINGS)                              # the brownies: a mellow, woozy "wah wah wah waaah"
+for i, k in enumerate(('C5', 'Bb4', 'A4')): s.n(2, i * 10, 9, k, 10)
+f0 = 440 * 2 ** ((N('G4') - 69) / 12)                      # the last note wavers, head-swimmy
+s.sweep(2, 30, [f0 * 2 ** (0.3 * math.sin(i * 0.4) / 12) for i in range(32)], 10)
 s.save('sfx_brownies')
 
 s = Sfx(); s.prog(2, GUITAR)                               # mugged: your money runs off down the street
@@ -258,6 +252,20 @@ for i, (k, d) in enumerate((('C5', 4), ('E5', 4), ('G5', 4), ('C6', 10), ('G5', 
 s.nz(12, 3, 6, 2); s.nz(27, 3, 8, 2)
 s.save('sfx_win')
 
+# the credits (bank_b.c): the Erwin block drops in with a cartoon fall, each justz00t letter is a rain drop
+s = Sfx(); s.prog(2, ORGAN)                                # the block falls: a cartoon slide whistle down
+s.sweep(2, 0, geo(1500, 300, 30), 10)
+s.save('sfx_credfall')
+
+s = Sfx(); s.prog(2, SQUARE)                               # ...and lands: a boing and a thud
+s.sweep(2, 0, [300 * 2 ** (7 * math.sin(i * 0.9) * math.exp(-i * 0.14) / 12) for i in range(18)], 11)
+for i, v in enumerate((13, 10, 7, 4)): s.nz(i, 12, v)
+s.save('sfx_credland')
+
+s = Sfx(); s.prog(2, ORGAN)                                # a rain drop: a little high plink falling
+s.sweep(2, 0, [2000, 1500, 1050, 700, 460], 8)
+s.save('sfx_drop')
+
 # ======================================================================== music
 class Tune(Mid):
     def __init__(self, bpm): Mid.__init__(self, int(round(60e6 / bpm)))
@@ -275,22 +283,26 @@ class Tune(Mid):
         for i, c in enumerate(pat.replace(' ', '')):
             if c in m: self.note(10, bar * 4 + i * 0.25, 0.1, m[c], vel if c != 'h' else vel * 3 // 4)
 
-# ---- the cop fight: fast and tense, A minor.  The tune (pulse 1) and the bass (triangle) carry it, because the
-#      gunshots take pulse 2 and the noise channel whenever they fire.
-t = Tune(152); t.prog(1, SAW); t.prog(2, PIANO)
-lead = ['E5 E5 G5 E5 D5 C5 D5 -', 'E5 E5 G5 A5 G5 E5 D5 C5', 'A4 C5 F5 - E5 F5 A5 -', 'G5 - D5 G5 B5 - A5 G5',
-        'E5 E5 G5 E5 D5 C5 D5 -', 'E5 E5 G5 A5 C6 - B5 A5', 'A5 - F5 A5 G5 F5 E5 -', 'E5 - G#5 B5 E6 - - .',
-        'D5 F5 A5 - F5 D5 F5 -', 'E5 A5 C6 - A5 E5 A5 -', 'F5 A5 D6 - C6 A5 F5 D5', 'E5 - G#5 - B5 G#5 E5 -',
-        'D5 F5 A5 - F5 D5 F5 -', 'E5 A5 C6 - A5 E5 C5 -', 'F5 - A5 C6 A5 - F5 A5', 'G#5 - B5 - E6 . E6 E6']
-chords = ['Am', 'Am', 'F', 'G', 'Am', 'Am', 'F', 'E', 'Dm', 'Am', 'Dm', 'E', 'Dm', 'Am', 'F', 'E']
-root = {'Am': 'A2', 'F': 'F2', 'G': 'G2', 'E': 'E2', 'Dm': 'D2'}
-stab = {'Am': ('C4', 'E4'), 'F': ('A3', 'C4'), 'G': ('B3', 'D4'), 'E': ('G#3', 'B3'), 'Dm': ('F3', 'A3')}
+# ---- the cop fight: heavy, menacing metal / gangsta rap, half-time A minor at 100 BPM.  The whining saw lead
+#      (pulse 1) and the chugging bass (triangle) carry it, because the gunshots take pulse 2 and the noise.
+t = Tune(100); t.prog(1, SAW); t.prog(2, SQUARE)
+L = ['E5 - - - A5 - G5 - E5 - - - D5 - - -',          # the G-funk hook
+     '. . E5 - G5 - E5 - D5 - C5 - A4 - - -',
+     'E5 - - - A5 - G5 - B5 - - - A5 - G5 -',
+     'E5 - D5 - C5 - D5 - E5 - - - - - . .',
+     'A4 A4 A4 A4 E5 - A4 A4 G4 G4 G4 G4 D5 - - -',    # the metal chug
+     'A4 A4 A4 A4 C5 - A4 A4 E4 E4 E4 E4 G4 - - -',
+     'A5 - G5 - E5 - D5 - E5 - G5 - A5 - B5 -',        # the climb
+     'C6 - B5 - A5 - G5 - E5 - D5 - C5 - A4 -']
+lmap = [0, 1, 2, 3, 0, 1, 4, 5, 6, 7, 2, 3, 4, 5, 6, 7]
+BA = 'A1 - - A1 - A2 - - E2 - - A1 - G1 - -'           # the heavy, hypnotic bass
+BB = 'A1 - - A1 - A2 - - C2 - - D2 - E2 - F2'
 for b in range(16):
-    c = chords[b]; r = N(root[c])
-    t.line(1, b, lead[b], V(13), gate=0.85)
-    for i in range(8): t.note(3, b * 4 + i * 0.5, 0.42, r + (12 if i in (2, 5, 7) else 0), 100)
-    for i in (1, 3, 5, 7): t.note(2, b * 4 + i * 0.5, 0.3, N(stab[c][(i >> 1) & 1]), V(8))
-    t.drums(b, 'k.h.s.k.k.h.ssss' if b in (7, 15) else 'k.h.s.k.k.h.s.h.')
+    t.line(1, b, L[lmap[b]], V(13), gate=0.9)
+    t.line(3, b, BB if b % 4 == 3 else BA, 110, gate=0.95)
+    t.note(2, b * 4 + 2.0, 0.25, N('E4'), V(9))        # power stabs on the backbeat (what the guns leave alone)
+    t.note(2, b * 4 + 3.5, 0.2, N('E4'), V(8))
+    t.drums(b, 'k.h.k.s.sssssssss' if b % 4 == 3 else 'k.h.h.k.s.h.h.oh', 108)
 t.save('song_fight', 64)
 
 # ---- Guido's boys: slow and heavy, D minor

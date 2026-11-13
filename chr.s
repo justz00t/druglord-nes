@@ -3,8 +3,13 @@
 .segment "FONT"
 _NESfont:
 .incbin "chr.bin"
-; the easter-egg song (tools/mid2nes.py), in the music bank with its player (music.c)
+; the sound effects and the in-game music (tools/mid2nes.py from the MIDI files in tools/snd), in the bank of their player (seq.c)
 .segment "MUSIC"
+.export _Sounds
+_Sounds:
+.incbin "sounds.bin"
+; the easter-egg song (tools/mid2nes.py), with PRG bank 6 to itself
+.segment "EASTER"
 .export _EasterSong
 _EasterSong:
 .incbin "easter.bin"

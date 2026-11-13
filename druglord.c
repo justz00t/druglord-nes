@@ -49,9 +49,9 @@ void clear_rows(u8 y0, u8 y1) {      /* inclusive */
 }
 void set_palette(void) {
     /* 0: white text, colours 2-3 the health colours pink and light red; 1: yellow, colour 3 white (the line);
-     * 2: red, colour 2 dark red (health), colour 3 grey (0 health); 3: cyan */
+     * 2: red, colour 2 dark red (health), colour 3 grey (0 health); 3: blue */
     static const u8 pal[16] = {0x0F, 0x30, 0x36, 0x26,  0x0F, 0x28, 0x18, 0x30,
-                               0x0F, 0x16, 0x06, 0x10,  0x0F, 0x2C, 0x1C, 0x00};
+                               0x0F, 0x16, 0x06, 0x10,  0x0F, 0x12, 0x02, 0x00};
     u8 i;
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00;
@@ -66,7 +66,7 @@ void clear_screen(void) {
     for (i = 0; i < 1024; i++) PPUDATA = 0;
     for (i = 0; i < 64; i++) attr[i] = 0;
     ink = 0; attr_dirty = 0; bgctl = 0;
-    pal3(0x2C, 0x1C);                                    /* cyan, unless a screen asks for green */
+    pal3(0x12, 0x02);                                    /* blue, unless a screen asks for green */
     PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x28; PPUDATA = 0x18;   /* palette 1 yellow (green on the main screen) */
     cx = 1; cy = 1;
 }
@@ -84,7 +84,19 @@ void colour_cols(u8 y0, u8 y1, u8 bx0, u8 bx1, u8 pal) {    /* bx = 16-pixel col
     for (i = 0; i < 64; i++) PPUDATA = attr[i];
     attr_dirty = 0;
 }
-void pal3(u8 a, u8 b) {                      /* palette 3 = cyan by default; green for a few screens */
+/* colour one 16-pixel-wide column of blocks (bx = 0..15) over rows y0..y1: the arrow of a list */
+void colour_blk(u8 y0, u8 y1, u8 bx, u8 pal) {
+    u8 r, i, sh;
+    for (r = y0 >> 1; r <= (y1 >> 1); r++) {
+        i = (r >> 1) * 8 + (bx >> 1); sh = ((r & 1) ? 4 : 0) + ((bx & 1) ? 2 : 0);
+        attr[i] = (attr[i] & ~(3 << sh)) | (pal << sh);
+    }
+    ppu_off();
+    latch = PPUSTATUS; PPUADDR = 0x23; PPUADDR = 0xC0;
+    for (i = 0; i < 64; i++) PPUDATA = attr[i];
+    attr_dirty = 0;
+}
+void pal3(u8 a, u8 b) {                      /* palette 3 = blue by default; green for a few screens */
     ppu_off();
     latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = a; PPUDATA = b;
 }
@@ -185,13 +197,15 @@ u8 wait_btn(void) {          /* wait for any new button, return it */
     for (;;) { e = vsync_pad(); if (e) return e; }
 }
 
-/* ---- sound effects: pulse 2, noise and (when no music plays) pulse 1, stepped once a frame while
- *      the game waits.  A press of A cuts a long effect short. ---- */
+/* ---- sound effects: every effect is a MIDI file (tools/snd/sfx_*.mid) played by the MIDI player in PRG bank 3
+ *      (seq.c), on pulse 2 and the noise channel - and on pulse 1 and the triangle too when no music plays.
+ *      sfx() starts one and waits for it; A cuts a long effect short. ---- */
 static u8 p1hi, p2hi;                /* last high period byte written: a $4003/$4007 write restarts the wave (a click), so it is only written when it changes */
 void p2(u16 per) { APU(0x06) = per & 255; if ((per >> 8) != p2hi) { p2hi = per >> 8; APU(0x07) = 0x08 | p2hi; } }
 void p1(u16 per) { APU(0x02) = per & 255; if ((per >> 8) != p1hi) { p1hi = per >> 8; APU(0x03) = 0x08 | p1hi; } }
+void apu_kick(void) { p1hi = p2hi = 0xFF; }      /* a voice changes hands: the next p1()/p2() writes the high byte */
 static u8 skip, sfx_t;
-u8 sfx_busy;                 /* a sound effect is playing: the menu music leaves pulse 2 and the noise alone */
+u8 sfx_busy;                 /* a sound effect is playing: the music leaves pulse 2 and the noise alone */
 /* one frame of an effect.  A pressed after the first 8 frames cuts the effect short (and is used up by that);
  * a button pressed earlier is kept for the next wait_btn(), so a quick press is never lost to a click. */
 static u8 tick(void) {
@@ -200,118 +214,12 @@ static u8 tick(void) {
     if (e) { if ((e & BTN_A) && sfx_t > 8) { skip = 1; pend_btn = 0; } else pend_btn |= e; }
     return skip;
 }
-static void sfx_off(void) { APU(0x04) = 0x30; APU(0x0C) = 0x30; if (!music_on) APU(0x00) = 0x30; p1hi = p2hi = 0xFF; sfx_busy = 0; }
-/* a steady tone on pulse 2: dv = duty | 0x30 | volume, n frames */
-void tone(u16 per, u8 dv, u8 n) { APU(0x04) = dv; p2(per); while (n--) if (tick()) break; }
-void snd(u16 per, u8 n) { ppu_show(); skip = 0; sfx_t = 0; p2hi = 0xFF; sfx_busy = 1; tone(per, 0xBC, n); APU(0x04) = 0x30; sfx_busy = 0; }
-/* a noise burst that fades: idx = period index 0 (hiss) .. 15 (rumble), from volume vol over n frames */
-void noi(u8 idx, u8 vol, u8 n) {
-    u8 i;
-    APU(0x0E) = idx; APU(0x0F) = 0x08;
-    for (i = 0; i < n; i++) { APU(0x0C) = 0x30 | (u8)((u16)vol * (n - i) / n); if (tick()) break; }
-    APU(0x0C) = 0x30;
-}
-/* a pulse-2 note that decays (a pluck), 12.5% duty */
-static void pluck(u16 per, u8 n) {
-    u8 v = 15;
-    p2(per);
-    while (n--) { APU(0x04) = 0x30 | v; if (v > 1) v--; if (tick()) break; }
-    APU(0x04) = 0x30;
-}
-/* a pulse-2 slide from one period to another over n frames (the period changes linearly) */
-static void slide(u16 from, u16 to, u8 dv, u8 n) {
-    u8 i;
-    APU(0x04) = dv;
-    for (i = 0; i < n; i++) { p2(from + (i32)((i32)to - from) * i / n); if (tick()) break; }
-}
-/* one gunshot: a crack (short bright noise) over a boom (noise rumble plus a low pulse thump) */
-static void bang(u8 crack, u8 boom, u8 thump) {
-    u8 i, v;
-    APU(0x0F) = 0x08;
-    if (thump) { APU(0x04) = 0xBF; p2(HZ(140)); }
-    for (i = 0; i < boom; i++) {
-        v = (u8)(15 - (u16)15 * i / boom);
-        APU(0x0E) = i < crack ? 4 : 10;
-        APU(0x0C) = 0x30 | v;
-        if (thump) { if (i < 10) p2(HZ(140) + i * 20); else APU(0x04) = 0x30; }
-        if (tick()) break;
-    }
-    APU(0x0C) = 0x30; APU(0x04) = 0x30;
-}
-/* a police siren: one slow wail (500 -> 1300 Hz and back, eased) then four fast yelps, on both pulses
- * (pulse 1 a touch sharp so the two beat against each other) */
-static const u8 siren_t[48] = {224,223,223,222,220,218,215,213,209,206,202,198,193,189,184,179,175,170,165,160,155,150,146,141,137,132,128,124,120,117,113,110,107,105,102,100,97,95,94,92,91,89,88,88,87,86,86,86};
-static u8 siren_step(u8 i) { p2(siren_t[i]); if (!music_on) p1(siren_t[i] + 3); return tick(); }
-static void siren(void) {
-    u8 i, c;
-    APU(0x04) = 0xBB; if (!music_on) APU(0x00) = 0xB7;
-    for (i = 0; i < 48; i++) if (siren_step(i)) goto out;
-    for (i = 48; i--; ) if (siren_step(i)) goto out;
-    for (c = 0; c < 4; c++) {
-        for (i = 0; i < 48; i += 4) if (siren_step(i)) goto out;
-        for (i = 48; i >= 4; i -= 4) if (siren_step(i - 4)) goto out;
-    }
-out:;
-}
-/* the EXTRA! sting: a news-wire xylophone.  One short figure on one note, over and over (tap-tap-taaap, a teletype
- * feel) on pulse 2, with a little noise tick for each mallet; the last figure ends on a ringing two-note hit.
- * xs_gap = frames to the next tap; xs_acc = 0 a tap, 3 the end. */
-static const u8 xs_gap[] = {5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 5,5,10, 0};
-static const u8 xs_acc[] = {0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  0,0,0,  3};
-static void news_sting(void) {
-    u8 i = 0, w = 0, v1 = 0, v2 = 0, f = 0;
-    APU(0x04) = 0x70; APU(0x00) = 0x70;
-    for (;;) {
-        if (w == 0) {
-            u8 a = xs_acc[i];
-            if (a == 3) {                                   /* the end: E6 and the octave, ringing */
-                p2hi = p1hi = 0xFF; p2(HZ(1319)); p1(HZ(2637)); v1 = v2 = 15;
-                for (f = 0; f < 50; f++) {
-                    APU(0x04) = 0x70 | v2; APU(0x00) = 0x70 | v1;
-                    if ((f & 3) == 3) { if (v1) v1--; if (v2) v2--; }
-                    if (tick()) break;
-                }
-                break;
-            }
-            p2hi = 0xFF; p2(HZ(1319)); v2 = 13;              /* the tap: E6 */
-            if (a) { p1hi = 0xFF; p1(a == 1 ? HZ(1976) : HZ(2637)); v1 = 14; }   /* B6 or E7 */
-            APU(0x0E) = 0x82; APU(0x0F) = 0x08; APU(0x0C) = 0x34;
-            w = xs_gap[i++];
-        }
-        APU(0x04) = 0x70 | v2; APU(0x00) = 0x70 | v1;
-        if (v2) v2 = v2 > 2 ? v2 - 2 : 0;
-        if (v1) v1 = v1 > 1 ? v1 - 1 : 0;
-        APU(0x0C) = 0x30;
-        w--;
-        if (tick()) break;
-    }
-    APU(0x00) = 0x30;
-}
 void sfx(u8 n) {
-    u8 i;
     ppu_show();
-    skip = 0; sfx_t = 0; p1hi = p2hi = 0xFF; sfx_busy = 1;
-    switch (n) {
-    case 2: tone(HZ(1760), 0x7A, 2); tone(HZ(2349), 0x78, 3); break;                 /* beep (menu pick) */
-    case 3: for (i = 0; i < 18; i++) { tone(i & 1 ? HZ(110) : HZ(104), 0xBD - (i >> 2), 1); } break;   /* denied: a buzzer */
-    case 4: noi(0, 8, 2); for (i = 0; i < 2; i++) { pluck(HZ(2093), 4); pluck(HZ(2637), 4); } pluck(HZ(3136), 14); break;   /* deal: "cha-ching" */
-    case 5: siren(); break;                                                              /* police siren */
-    case 6: pluck(HZ(784), 5); pluck(HZ(988), 5); pluck(HZ(1175), 5); pluck(HZ(1568), 16); break;        /* news: a short fanfare */
-    case 7: news_sting(); break;                                                         /* EXTRA!: the news-wire xylophone */
-    case 8: noi(6, 12, 6); slide(HZ(300), HZ(60), 0xBE, 8); break;                           /* hit: a thud */
-    case 9: for (i = 0; i < 40; i++) { APU(0x0E) = 15 - (i >> 2); APU(0x0F) = 0x08; APU(0x0C) = 0x30 | (i < 32 ? 4 + (i >> 3) : 8 - (i & 7)); if (tick()) break; }   /* jet: engines spool up */
-            APU(0x0C) = 0x30; break;
-    case 10: slide(HZ(100), HZ(220), 0xBE, 10); slide(HZ(220), HZ(600), 0xBE, 25); break;      /* take-off: a rising whine */
-    case 11: bang(2, 5, 0); break;                                                       /* Saturday Night Special: a pop */
-    case 12: bang(3, 10, 0); break;                                                      /* Ruger: a crack */
-    case 13: bang(3, 18, 1); break;                                                      /* Auto Mag: a boom */
-    case 14: for (i = 0; i < 4; i++) { bang(1, 3, 0); APU(0x0C) = 0x30; tick(); } break;    /* Uzi: a burst */
-    case 15: for (i = 0; i < 3; i++) { bang(2, 6, 1); tick(); tick(); } break;              /* AK-47: three heavy rounds */
-    case 16: tone(HZ(330), 0xBC, 12); tone(HZ(311), 0xBC, 12); tone(HZ(294), 0xBC, 12); tone(HZ(220), 0xBC, 30); break;   /* death: four falling notes */
-    case 17: noi(8, 14, 5); slide(HZ(200), HZ(80), 0xBE, 6); break;                         /* punch */
-    case 20: tone(HZ(2093), 0x74, 1); break;                                             /* cursor tick */
-    }
-    sfx_off();
+    skip = 0; sfx_t = 0;
+    seq_sfx(n);
+    while (sfx_busy) if (tick()) break;
+    if (sfx_busy) seq_sfx_stop();
 }
 
 /* ---- music: the title tune from tools/title.mid, played on pulse 1 / pulse 2 / triangle.  Each tune is a list of
@@ -323,8 +231,8 @@ u8 m_wait, m_v1, m_v2, m_tri, m_tage, m_cnt, m_use2, music_on;
 u8 m_unit, m_nv;                /* 64th-note count in the bar (the drums), noise volume */
 u8 m_loops;                     /* times the tune has played through since music_start() */
 extern u8 curbank;              /* the PRG bank mapped at $8000 (crt0.s) */
-u8 m_song;                      /* 0 = the title tune, 1 = the main-menu song, 2 = the easter-egg song, 3 = the victory tune
-                                 * (1-3 are played by music.c / victory.c in PRG bank 3) */
+u8 m_song;                      /* 0 = the title tune, 1 = the main-menu song, 2 = a MIDI song (seq.c: song(), the easter-egg
+                                 * song), 3 = the victory tune (1-3 are played in PRG bank 3) */
 u8 easter_on;                   /* the easter egg has been found this game (reset by init_game) */
 void music_stop(void) {
     music_on = 0;
@@ -346,7 +254,7 @@ void music_note(u8 ab, u8 c) {
 }
 void music_frame(void) {
     if (m_song == 1) { menu_frame(); return; }
-    if (m_song == 2) { easter_frame(); return; }
+    if (m_song == 2) { seq_frame(); return; }
     if (m_song == 3) { vic_frame(); return; }
     m_acc += m_rate;
     while (m_acc >= 256) {
@@ -375,7 +283,7 @@ void music_frame(void) {
 }
 /* called from the frame waits: plays the frames that have passed (vblanks are counted by wait_vblank) */
 void music_update(void) {
-    while (pend) { pend--; if (music_on) music_frame(); }
+    while (pend) { pend--; if (music_on) music_frame(); if (sfx_busy) seq_sfx_frame(); }
 }
 
 /* ======================================================================== */
@@ -514,6 +422,13 @@ void say(const char* s) {
     }
 }
 void sayc(u8 col, const char* s) { ink = col; say(s); }
+/* start a new block of text below a blank line, on an even row: text colours come in bands of two rows (rows 2-3,
+ * 4-5, ...), so a block in another colour has to start on one */
+void gap(void) {
+    if (cx > wx0) nl();
+    nl();
+    if (cy & 1) nl();
+}
 void say_num(i32 v) {
     u8 l;
     ltoa_s(v);
@@ -530,7 +445,7 @@ void say_money(i32 v) {
 }
 void press_a(void) {
     u8 e;
-    ink = 3; ps_at(1, 27, "Press A to continue");
+    ink = 0; ps_at(1, 27, "Press A to continue");
     do { e = wait_btn(); } while (!(e & BTN_A));
     fill(1, 27, ' ', 31);
 }
@@ -541,14 +456,13 @@ void page(void) {
     wx0 = 1; wx1 = 30; wy0 = 1; wy1 = 26;
     cx = 1; cy = 1;
 }
-u8 yn(void) {                /* A = yes, B = no */
-    u8 e;
-    ink = 1; ps_at(1, 26, "A = Yes     B = No");
-    for (;;) {
-        e = wait_btn();
-        if (e & BTN_A) return 1;
-        if (e & BTN_B) return 0;
-    }
+u8 yn(void) {                /* A = yes, B = no: asked on the last row of the text window, in yellow; the text cursor stays put */
+    u8 e, sx = cx, sy = cy;
+    ink = 1; ps_at(1, wy1, "A = Yes     B = No"); ink = 0;
+    do { e = wait_btn(); } while (!(e & (BTN_A | BTN_B)));
+    fill(1, wy1, ' ', 30);
+    cx = sx; cy = sy;
+    return (e & BTN_A) ? 1 : 0;
 }
 
 /* a health value in its colour: white at full health, then pink, light red, red and dark red in steps of 25%
@@ -604,11 +518,12 @@ void draw_main(void) {
 }
 
 /* choose one entry of a list (rows y..y+n-1, cursor in column x); B = cancel (-1) */
-u8 arrow_t = 0x10;              /* the arrow tile choose() draws (0x9A = the blue one of the main menu) */
+u8 arrow_t = 0x10;              /* the arrow tile choose() draws */
 i16 choose(u8 x, u8 y, u8 n, i16 start) {
     i16 s = start, o = start;
     u8 e, i;
     for (i = 0; i < n; i++) put(x, y + i, i == s ? arrow_t : ' ');
+    colour_blk(y, y + n - 1, x >> 1, 2);                /* the arrow is red everywhere */
     for (;;) {
         e = wait_btn();
 #ifdef DEBUG
@@ -620,9 +535,9 @@ i16 choose(u8 x, u8 y, u8 n, i16 start) {
         o = s;
         if (e & BTN_UP) s = s ? s - 1 : n - 1;
         else if (e & BTN_DOWN) s = s + 1 < n ? s + 1 : 0;
-        else if (e & BTN_A) { put(x, y + s, ' '); sfx(2); return s; }
+        else if (e & BTN_A) { put(x, y + s, ' '); sfx(SFX_PICK); return s; }
         else if (e & BTN_B) { for (i = 0; i < n; i++) put(x, y + i, ' '); return -1; }
-        if (o != s) { put2(x, y + o, ' ', x, y + s, arrow_t); sfx(20); }
+        if (o != s) { put2(x, y + o, ' ', x, y + s, arrow_t); sfx(SFX_TICK); }
     }
 }
 
@@ -653,10 +568,11 @@ i32 pick_number(u8 x, u8 y, u8 width, i32 maxv) {
             return v;
         } else if (e & BTN_B) return -1;
         put2(x + op, y, '0' + dig[op], x + pos, y, (u8)('0' + dig[pos]) | 0x80);
-        sfx(20);
+        sfx(SFX_TICK);
     }
 }
-void msg_area(void) { clear_rows(20, 27); wx0 = 1; wx1 = 30; wy0 = 21; wy1 = 27; cx = 1; cy = 21; }
+/* the message area of the main screen (rows 20-27): cleared, and white again */
+void msg_area(void) { clear_rows(20, 27); colour_rows(20, 27, 0); ink = 0; wx0 = 1; wx1 = 30; wy0 = 21; wy1 = 27; cx = 1; cy = 21; }
 void msg_wait(void) { u8 e; ppu_show(); do { e = wait_btn(); } while (!(e & (BTN_A | BTN_B))); }
 
 
@@ -682,8 +598,7 @@ void game(void) {
             ps_at(2, 26, "Go to de Hospital");
             ps_at(2, 27, "Quit de game");
             ink = 0;
-            colour_cols(20, 27, 0, 0, 2);
-            sel = choose(0, 21, 7, 0);                   /* the arrow red (its column is palette 2) */
+            sel = choose(0, 21, 7, 0);
 #ifdef DEBUG
             if (sel == -2) { debug_menu(); draw_main(); continue; }
 #endif

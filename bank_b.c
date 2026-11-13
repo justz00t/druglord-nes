@@ -33,13 +33,12 @@ static void box(u8 x, u8 y, u8 w, u8 h) {
 void show_death(void) {
     page();
     delay(90);
-    sfx(16);
-    pal3(0x2A, 0x1A);
+    song(SONG_FUNERAL);                                  /* the funeral march, until you leave the page */
     ink = 2; box(1, 2, 30, 24);
     wx0 = 3; wx1 = 28; wy0 = 4; wy1 = 22; cx = 3; cy = 4;
     sayc(1, "Everything has a strange misty look to it...\n\n");
     sayc(0, "You are standing next to your dead body.  As you decide what to do next, you start to feel heat under your feet.  The next thing you know, you see flames licking all around your body.\n\n");
-    sayc(0, "I guess this is "); sayc(3, "the end."); ink = 0;
+    sayc(0, "I guess this is "); sayc(2, "the end."); ink = 0;
     delay(240);
     press_a();
 }
@@ -121,7 +120,7 @@ static void end_scene(void) {
             for (layer = 0; layer < nl; layer++) {
                 if ((i32)(idx * 5 + k + 1) * 100000L + (i32)layer * 2000000L > cash) break;
                 vb_bar(6 + k * 3 - idx, 12 + idx - layer);
-                snd(HZ(1000 + layer * 500), 1); snd(HZ(3000 + layer * 500), 1);
+                sfx(SFX_STACK0 + layer);
             }
 }
 /* the score list, 18 lines, 5 at a time in a box over the bottom of the scene */
@@ -187,8 +186,8 @@ static void end_box(u32 score, u8 rk) {
     for (;;) {
         do {
             e = wait_btn();
-            if ((e & BTN_UP) && top) { top--; sfx(20); break; }
-            if ((e & BTN_DOWN) && top < 12) { top++; sfx(20); break; }
+            if ((e & BTN_UP) && top) { top--; sfx(SFX_TICK); break; }
+            if ((e & BTN_DOWN) && top < 12) { top++; sfx(SFX_TICK); break; }
         } while (!(e & BTN_A));
         if (e & BTN_A) break;
         for (i = 0; i < 6; i++) { end_row(top + i); vb_row(20 + i); }   /* scrolling: a row a frame, screen on */
@@ -302,7 +301,7 @@ void show_win(void) {
     score = score_calc(cash + bank - debt, pct);
     while (rk < 10 && rank_thr[rk] <= score) rk++;
     end_scene();
-    sfx(4);
+    sfx(SFX_DEAL);
     end_box(score, rk);
     set_palette();                                       /* the scene changed the game palettes */
     hs_after_win(score, rk);
@@ -310,6 +309,7 @@ void show_win(void) {
 
 u8 ask_play_again(void) {
     page();
+    ink = 1;                                             /* a question: yellow, like its A/B line */
     ps_at(1, 12, "Would ya like ta");
     ps_at(1, 13, "play again?");
     return yn();
@@ -327,8 +327,10 @@ void exit_screen(void) {
     colour_cols(4, 5, 4, 13, 2);                         /* only the heading is red, the frame stays white */
     ps_at(1, 25, "Thank you for playing DrugLord.");
     pal3(0x2A, 0x1A); colour_rows(24, 25, 3);
+    song(SONG_NOTICE);
     ppu_show();
     while (!(wait_btn() & BTN_A)) {}
+    music_stop();
 }
 
 #ifdef DEBUG
@@ -515,24 +517,36 @@ void title_wait(void) {
 /* ======================================================================== */
 /*  Debug build only: SELECT+START in the main menu opens this menu         */
 /* ======================================================================== */
-const char* const snd_name[] = {
-    "Beep", "Denied", "Deal", "Siren", "News", "EXTRA!", "Hit", "Jet", "Take-off",
-    "Gun 1", "Gun 2", "Gun 3", "Gun 4", "Gun 5", "Death", "Punch", "Tick", "Music"};
-const u8 snd_id[] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20};
+/* the sound test: every effect and every piece of music the MIDI player has (the names are the file names in
+ * tools/snd), 20 to a page, then the title tune and the easter-egg song.  A plays one (music until B), B leaves. */
+#define SND_NAMES
+#include "sounds.h"
+#define SND_ROWS 20
 void sound_test(void) {
-    u8 i;
+    u8 i, n, base = 0;
     i16 s = 0;
+    const char* nm;
     for (;;) {
         page();
-        for (i = 0; i < SND_COUNT; i++) ps_at(2, 4 + i, snd_name[i]);
-        s = choose(0, 4, SND_COUNT, s);
-        if (s < 0) return;
-        if (s == SND_COUNT - 1) {                        /* title music until B */
-            music_start();
+        n = SND_ALL + 2 - base; if (n > SND_ROWS) n = SND_ROWS;
+        for (i = 0; i < n; i++) {
+            ink = base + i >= SND_SFX ? 1 : 0;           /* the music in yellow */
+            nm = snd_names[base + i < SND_ALL ? base + i : 0];
+            if (base + i == SND_ALL) nm = "title"; else if (base + i > SND_ALL) nm = "easter egg";
+            ps_at(2, 3 + i, nm);
+        }
+        ink = 0; ps_at(2, 4 + n, base + n <= SND_ALL + 1 ? "more..." : "back to the first");
+        s = choose(0, 3, n + 1, s);
+        if (s < 0) { music_stop(); return; }
+        if (s == n) { base = base + n <= SND_ALL + 1 ? base + n : 0; s = 0; continue; }
+        i = base + s;
+        if (i < SND_SFX) sfx(i);
+        else {
+            if (i == SND_ALL) music_start(); else if (i > SND_ALL) easter_music_start(); else song(i);
             ppu_show();
-            while (!(vsync_pad() & BTN_B)) {}
+            while (music_on && !(vsync_pad() & BTN_B)) {}
             music_stop();
-        } else sfx(snd_id[s]);
+        }
     }
 }
 

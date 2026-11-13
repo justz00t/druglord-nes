@@ -2,3 +2,6 @@
 tools/easter_local.mid
 # generated at build time from the easter-egg MIDI (it would contain your local song)
 easter.bin
+# generated at build time from the MIDI files in tools/snd
+sounds.bin
+sounds.h

@@ -1,9 +1,9 @@
 ; Start-up code for the NES port: mapper 2 (UxROM), 128 KB PRG, 8 KB CHR-RAM, 8 KB battery-backed WRAM at $6000.
-;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = the music, bank 4 = the high scores (hiscore.c), bank 5 = the cop fight (fight.c), bank 6 = free, bank 7 = fixed (this file, the runtime,
+;   PRG bank 0 = CODE_A/RODATA_A, bank 1 = CODE_B/RODATA_B, bank 2 = the font, bank 3 = the music and the sound effects, bank 4 = the high scores (hiscore.c), bank 5 = the cop fight (fight.c), bank 6 = the easter-egg song (easter.bin), bank 7 = fixed (this file, the runtime,
 ;   the engine).  Functions in the switchable banks are called through _bankcall (cc65 "wrapped-call").
 
-        .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count, _ppu_copy
-        .exportzp       _ppu_src
+        .export         _exit, _bankcall, _bank_set, _curbank, _nmi_count, _ppu_copy, _seq_fetch
+        .exportzp       _ppu_src, _seq_ptr, _seq_buf
         .export         __STARTUP__ : absolute = 1
         .import         _main, zerobss, copydata, callptr4
         .import         __STACK_START__, __STACK_SIZE__
@@ -114,3 +114,23 @@ _ppu_copy:
         dex
         bne     @loop
 @done:  rts
+
+; seq_fetch(bank): copy 16 bytes from seq_ptr in PRG bank A to seq_buf.  The MIDI player (seq.c, bank 3) reads
+; its data through this, so the data can live in any bank.
+.segment "ZEROPAGE"
+_seq_ptr: .res 2
+_seq_buf: .res 16
+.segment "STARTUP"
+_seq_fetch:
+        tax
+        lda     _curbank
+        pha
+        txa
+        jsr     _bank_set
+        ldy     #15
+@loop:  lda     (_seq_ptr),y
+        sta     _seq_buf,y
+        dey
+        bpl     @loop
+        pla
+        jmp     _bank_set

@@ -40,7 +40,12 @@ When you win, the DOS end scene is drawn (the table, the lamp and the coins, fro
 
 ![win](docs/win.png)
 
-**Sound effects** are played a frame at a time on pulse 2, the noise channel and (outside the title) pulse 1, so they can sweep: the police siren is a slow wail (500 to 1300 Hz and back, eased) followed by four fast yelps, with the second pulse a touch sharp so the two beat; the guns are a crack over a boom (the Auto Mag and AK-47 add a low thump; the Uzi and AK-47 fire bursts); the jet's engines spool up and whine off; the EXTRA! newspaper plays a news-wire xylophone sting (one short tap-tap-taaap figure on one note, repeated, ending on a ringing hit), deals ring up a cash register, the buzzer refuses, hits thud, the thugs' bat lands a punch, and the cursor ticks. A press of A cuts a long effect short (the debug ROM's sound test plays all of them).
+**Every sound effect and all the in-game music is a MIDI file** in `tools/snd/`, played by one MIDI player (`seq.c`). `tools/mid2nes.py` converts them at build time, so you can open any of them in a MIDI editor, change it, and rebuild. MIDI channel 1 is pulse 1, channel 2 pulse 2, channel 3 the triangle and channel 10 the noise channel (drums and noises); velocity is volume, the program picks the pulse sound, and pitch bend gives sweeps. The top of `tools/mid2nes.py` has the full rules. `sfx_NAME.mid` is a sound effect and `song_NAME.mid` a looping piece of music. `tools/make_snd.py` wrote the originals and can write them again; the build never runs it.
+
+* **Sound effects:** a sound effect takes pulse 2 and the noise channel (and the other two voices when no music is playing), so the music carries on underneath. There is one for nearly everything: the cash register on a deal, a double buzzer when you can't, coins in and out of the bank, the bell on the bank's counter, Guido's three notes at the loan shark, a heart monitor at the hospital and a sparkle when you're patched up, the jet spooling up and flying off, a different shot for each gun, a fist, a bullet landing, the baseball bat, a street tip, the factory blowing up, the zip of a new trenchcoat, guns being racked, a blackmail sting, running feet, and a short fanfare when the cops are down. The police siren (a slow wail, then four yelps, the two pulses beating) and the EXTRA! news-wire xylophone are the ones the game already had, now as MIDI. A press of A cuts a long effect short.
+* **Music:** the cop fight has its own theme (fast, A minor: the tune and bass are on the two voices the gunshots don't take), Guido's thugs and the mugger get a slow heavy one, the other event pages a sneaky street walk, the death screen the funeral march (Chopin, 1839), and the notice on the way out a quiet closing piece. The event music stops for the sound of how the event turned out.
+
+The debug ROM's sound test plays every one of them by name.
 
 The rules, odds and formulas are the DOS original's (see "GAME RULES AND FORMULAS" in `c/DRUGLORD.C` of https://github.com/justz00t/druglord), including its
 random number generator.  The NES has no floating point, so the formulas are redone with integers in a way that gives
@@ -54,12 +59,13 @@ Original quirks are kept, e.g. banking does not pass a day and events only happe
 * No save game (the high-score table is kept in battery RAM instead).
 * The cop fight screen is simplified (one action line at a time), but uses the same rules.
 * The death screen is the original's text in its frame (no tombstone).
-* The jet menu shows a small map of the cities; the main screen colours the labels, drug names and prices.
+* The jet menu shows a small map of the cities (outline blue, cities white, yours yellow).
+* One colour scheme on every screen: white for the text and values, yellow for labels, questions and prompts, red for commands, list arrows, headlines and bad news; health runs from white down to dark red.
 
 ## Build
 
 `./build.sh` builds both ROMs (`druglord.nes` and `druglord-debug.nes`, the latter with `-DDEBUG`); it needs cc65 on the path (2.18 or later, e.g. Ubuntu's `apt install cc65`); set `CC65_HOME` if it is not installed system-wide).
-The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main loop), `bank_a.c` (cop fight, events, menus), `bank_b.c` (start/end screens, title, debug), `hiscore.c` (high scores, bank 4), `music.c` + `victory.c` (the main-menu, easter-egg and victory music, bank 3), `crt0.s` (start-up, bank switching), `dl.h` (shared declarations). Calls into the switchable banks go through `_bankcall` (cc65 `wrapped-call`). PRG banks: 0 = A, 1 = B, 2 = the tile sets and pictures, 3 = the music, 4 = the high scores, 5 = the cop fight (`fight.c`), 6 = free, 7 = fixed.
+The source is split by PRG bank: `druglord.c` (fixed bank: engine, rules, main loop), `bank_a.c` (events, menus), `bank_b.c` (start/end screens, title, debug), `hiscore.c` (high scores, bank 4), `music.c` + `victory.c` + `seq.c` (the main-menu song, the victory tune, and the MIDI player with its sound effects and music, bank 3), `crt0.s` (start-up, bank switching), `dl.h` (shared declarations). Calls into the switchable banks go through `_bankcall` (cc65 `wrapped-call`). PRG banks: 0 = A, 1 = B, 2 = the tile sets and pictures, 3 = the music and sound effects, 4 = the high scores, 5 = the cop fight (`fight.c`), 6 = the easter-egg song, 7 = fixed.
 `tools/mkdata.py` creates the tiles (`chr.bin`), the title data (`title.h`), the music tables (`music.h`) and the score tables (`tables.h`).
 The font is the IBM PC 8x8 font, so tile numbers are DOS characters (tile + 0x80 is the inverted glyph, used as highlight; tiles 8-12 are the block and shade characters).
 PRG bank 2 holds three 4 KB tile sets: the game's (pattern table 0), the title's (the font plus the logo tiles built from `tools/title_art.bin`, the DOS `titleArt` data) and the end scene's (the font plus the picture tiles from `tools/end_scene.bin` and `tools/gun_sprite.bin`, the stacks of money and the pistol); the last two are loaded into pattern table 1 as needed (`load_pt1`).
@@ -72,7 +78,7 @@ After a win, the initials screen plays an original victory tune (`victory.c`: C 
 
 Sell **more than 100 cocaine in one sale** and the main-screen music changes to the easter-egg song for the rest of that game (until you win, die or quit; a new game starts with the normal music again). The debug ROM's "Coke+200" entry gives you enough cocaine to try it.
 
-The song comes from a MIDI file, converted at build time by `tools/mid2nes.py` (a generic import: at every 16th note the lowest sounding note below middle G goes to the triangle, the highest two others to the pulses, the drum channel is ignored and the game adds its own beat; the first tempo is used; the song loops, and is cut at a bar line if it is too long for the 12 KB it has in PRG bank 3, about 2900 changes of notes).
+The song comes from a MIDI file, converted at build time by `tools/mid2nes.py` (a generic import: at every 16th note the lowest sounding note below middle G goes to the triangle, the highest two others to the pulses, the drum channel is ignored and the game adds its own beat; the first tempo is used; the song loops, and is cut at a bar line if it is too long for the 16 KB of PRG bank 6, which it has to itself). It plays on the same MIDI player as the rest of the sound, and the debug ROM's sound test has it as "easter egg".
 
 * `tools/easter_default.mid` is an original placeholder tune.
 * To use your own song, save it as **`tools/easter_local.mid`** and run `./build.sh`. That file, and the generated `easter.bin`, are in `.gitignore`, so they stay on your machine. The ROM you build then contains your song: keep that ROM to yourself (don't commit it).

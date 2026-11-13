@@ -209,7 +209,7 @@ void hs_entry(u8 pos, u32 score, u8 rk) {
         if (e & BTN_START) go = 1;
     }
     pal_default();
-    sfx(4);
+    sfx(SFX_DEAL);
     hs_insert(pos, nm, score);
     hs_show(pos);
 }

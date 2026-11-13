@@ -6,8 +6,8 @@
 #include "dl.h"
 
 extern u8 m_song, music_on, pend, sfx_busy;
-extern const u8 EasterSong[];                         /* its pulse period table (MIDI note 0-127) is shared */
-static u16 vper(u8 k) { const u8* p = EasterSong + 6 + (u16)k * 2; return p[0] | (p[1] << 8); }
+u16 note_per(u8 k);                                   /* seq.c: the pulse period of MIDI note k */
+#define vper note_per
 
 /* 64 steps (4 bars of 16ths) */
 #define C 0

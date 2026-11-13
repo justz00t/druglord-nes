@@ -42,7 +42,8 @@ void cop_fight(void) {
     if (gun_type >= 4) shots = 3;
     page();
     ink = 2; ps_at(1, 1, "The cops are on your tail!!!");
-    sfx(5);
+    sfx(SFX_SIREN);
+    song(SONG_FIGHT);                                    /* the fight music, from here to the last shot */
     ink = 0; ps_at(1, 3, "Do you wanna");
     ps_at(3, 4, "Go at it alone");
     ps_at(3, 5, "Call a friend (1 status pt.)");
@@ -53,7 +54,7 @@ void cop_fight(void) {
         choice++;
         if ((choice == 2 && status == 0) || (choice == 3 && status < 5)) {
             ink = 2; ps_at(1, 8, "You don't have enough points!");
-            sfx(3); delay(90);
+            sfx(SFX_DENIED); delay(90);
             fill(1, 8, ' ', 30);
             continue;
         }
@@ -101,7 +102,8 @@ void cop_fight(void) {
         for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
         if (k & BTN_B) {                                 /* run */
             fight_msg("You take off running...");
-            delay(60);
+            sfx(SFX_RUN);
+            delay(30);
             if (rnd() % 10 + nc / 3 < rnd() % 10 + nf / 3) {
                 fight_msg("and ya got away!!!"); health = php[0]; result = 1;
             } else { fight_msg("and ya didn't get away!!!"); result = 2; k = BTN_A; }
@@ -114,10 +116,10 @@ void cop_fight(void) {
                     att = 0;
                     for (;;) {
                         do { t = rnd() % nc; } while (chp[t] == 0);
-                        sfx(gun_type + 10);
+                        sfx(si < num_guns ? SFX_GUN1 - 1 + gun_type : SFX_PUNCH);
                         mb_start(); mb_s(si < num_guns ? "Firing at cop " : "Punching cop "); mb_n(t + 1);
                         if (rnd() % 2 == 0) {
-                            mb_s(" *Hit!*"); mb_show(); sfx(8);
+                            mb_s(" *Hit!*"); mb_show(); seq_sfx(SFX_HIT);
                             chp[t] -= (si < num_guns) ? dice(6, gun_dice[gun_type]) : dice(4, 1);
                             if (chp[t] <= 0) { chp[t] = 0; copsAlive--; }
                             hit_star(1, t);
@@ -136,10 +138,10 @@ void cop_fight(void) {
                 for (si = 0; si < nc; si++) {
                     if (chp[si] == 0) continue;
                     do { t = rnd() % (nf + 1); } while (php[t] == 0);
-                    sfx(ct + 10);
+                    sfx(SFX_GUN1 - 1 + ct);
                     mb_start(); mb_s("Cop "); mb_n(si + 1); mb_s(" shoots "); if (t == 0) mb_s("you"); else { mb_s("mate "); mb_n(t); }
                     if (rnd() % 2 == 0) {
-                        mb_s(" *Hit!*"); mb_show(); sfx(8);
+                        mb_s(" *Hit!*"); mb_show(); seq_sfx(SFX_HIT);
                         php[t] -= dice(6, gun_dice[ct]);
                         if (php[t] <= 0) { status--; php[t] = 0; partyAlive--; }
                         hit_star(0, t);
@@ -152,33 +154,35 @@ void cop_fight(void) {
         }
         if (!(copsAlive > 0 && partyAlive > 0 && php[0] > 0 && result != 1)) break;
     }
+    music_stop();
     if (result == 1) { delay(60); live = 0; return; }
     health = php[0];
-    if (health == 0) { dead = 1; live = 0; return; }
+    if (health == 0) { dead = 1; delay(40); live = 0; return; }
     fight_msg("Yous wasted 'em!!! Way ta go, man!!!");
-    delay(90);
-    page();                                              /* the spoils, on a page of their own */
-    fm_y = 1; fight_msg("Yous wasted 'em!!! Way ta go, man!!!");
-    fm_y = 8;
+    sfx(SFX_WIN);
+    delay(60);
+    page();                                              /* the spoils, on a page of their own: the same look as the event pages */
+    sayc(2, "Yous wasted 'em!!! Way ta go, man!!!");
     {
         u8 sell = 1;
         if (!(ct < gun_type && nc <= num_guns)) {
-            ink = 0; ps_at(1, 4, nc == 1 ? "Take his gun, man? (Y/N)" : "Take their guns, man? (Y/N)");
-            ink = 1; ps_at(1, 6, "A = Yes     B = No");
-            for (;;) { k = wait_btn(); if (k & (BTN_A | BTN_B)) break; }
-            if (k & BTN_A) {
-                fight_msg("You want 'em, you got 'em! What a bunch'a chumps!");
+            gap();
+            sayc(1, nc == 1 ? "Take his gun, man? (Y/N)" : "Take their guns, man? (Y/N)");
+            if (yn()) {
+                gap();
+                sayc(0, "You want 'em, you got 'em! What a bunch'a chumps!");
                 sell = 0;
                 if (gun_type == ct) num_guns += nc; else { gun_type = ct; num_guns = nc; }
-            } else { fight_msg("OK, man, it's yer call."); delay(90); }
+                sfx(SFX_COCK);
+            } else { gap(); sayc(0, "OK, man, it's yer call."); }
         }
         if (sell) {
             i32 gold = (i32)nc * ct * 200;
-            at(1, 11); wx0 = 1; wx1 = 30; wy0 = 11; wy1 = 26;
-            sayc(3, "You sell the "); say_num(nc); say(" guns that were on the pigs you wasted for ");
+            gap();
+            sayc(0, "You sell the "); say_num(nc); say(" guns that were on the pigs you wasted for ");
             say_num(gold); say(" bucks! This'll teach 'em not to mess with ya, huh?");
             cash += gold; status += nc;
-            delay(200);
+            sfx(SFX_DEAL);
         }
     }
     press_a();

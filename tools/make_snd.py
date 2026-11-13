@@ -283,27 +283,134 @@ class Tune(Mid):
         for i, c in enumerate(pat.replace(' ', '')):
             if c in m: self.note(10, bar * 4 + i * 0.25, 0.1, m[c], vel if c != 'h' else vel * 3 // 4)
 
-# ---- the cop fight: heavy, menacing metal / gangsta rap, half-time A minor at 100 BPM.  The whining saw lead
-#      (pulse 1) and the chugging bass (triangle) carry it, because the gunshots take pulse 2 and the noise.
-t = Tune(100); t.prog(1, SAW); t.prog(2, SQUARE)
-L = ['E5 - - - A5 - G5 - E5 - - - D5 - - -',          # the G-funk hook
-     '. . E5 - G5 - E5 - D5 - C5 - A4 - - -',
-     'E5 - - - A5 - G5 - B5 - - - A5 - G5 -',
-     'E5 - D5 - C5 - D5 - E5 - - - - - . .',
-     'A4 A4 A4 A4 E5 - A4 A4 G4 G4 G4 G4 D5 - - -',    # the metal chug
-     'A4 A4 A4 A4 C5 - A4 A4 E4 E4 E4 E4 G4 - - -',
-     'A5 - G5 - E5 - D5 - E5 - G5 - A5 - B5 -',        # the climb
-     'C6 - B5 - A5 - G5 - E5 - D5 - C5 - A4 -']
-lmap = [0, 1, 2, 3, 0, 1, 4, 5, 6, 7, 2, 3, 4, 5, 6, 7]
-BA = 'A1 - - A1 - A2 - - E2 - - A1 - G1 - -'           # the heavy, hypnotic bass
-BB = 'A1 - - A1 - A2 - - C2 - - D2 - E2 - F2'
-for b in range(16):
-    t.line(1, b, L[lmap[b]], V(13), gate=0.9)
-    t.line(3, b, BB if b % 4 == 3 else BA, 110, gate=0.95)
-    t.note(2, b * 4 + 2.0, 0.25, N('E4'), V(9))        # power stabs on the backbeat (what the guns leave alone)
-    t.note(2, b * 4 + 3.5, 0.2, N('E4'), V(8))
-    t.drums(b, 'k.h.k.s.sssssssss' if b % 4 == 3 else 'k.h.h.k.s.h.h.oh', 108)
-t.save('song_fight', 64)
+# ---- the cop fight: six tracks to pick from (metal / gangsta rap), all fast.  The lead (pulse 1) and the bass
+#      (triangle) carry each one, because the gunshots take pulse 2 and the noise.  Change the one the game uses
+#      in fight.c (SONG_FIGHT1..6).
+def bars(*rows):                              # validate: every bar is 16 sixteenth-note slots
+    for r in rows:
+        assert len(r.split()) == 16, ('bad bar (%d tokens): %s' % (len(r.split()), r))
+    return rows
+
+# --- 1: thrash metal, 160 BPM, E minor - tremolo picking and a galloping bass ---
+t = Tune(160); t.prog(1, SAW); t.prog(2, SQUARE)
+L1 = bars('E5 E5 E5 E5 G5 G5 E5 E5 D5 D5 E5 E5 B4 B4 D5 D5',
+          'E5 E5 E5 E5 G5 G5 A5 A5 B5 B5 A5 A5 G5 G5 E5 E5',
+          'E5 E5 E5 E5 G5 G5 E5 E5 C5 C5 B4 B4 C5 C5 D5 D5',
+          'B5 B5 A5 A5 G5 G5 E5 E5 F#5 F#5 G5 G5 B5 B5 B5 B5')
+B1 = bars('E2 . E2 E2 . E2 E2 . E2 E2 . E2 D2 . C2 .',
+          'E2 . E2 E2 . E2 E2 . E2 C2 . C2 D2 . D2 .')
+d1 = 'k.ksk.ksk.ksk.ks'; d1f = 'ksksksksksksksss'
+for b in range(8):
+    t.line(1, b, L1[b % 4], V(13), unit=0.25, gate=0.6)
+    t.line(3, b, B1[b % 2], 110, unit=0.25, gate=0.7)
+    t.note(2, b * 4, 0.45, N('E3'), V(9)); t.note(2, b * 4 + 2, 0.45, N('G3'), V(9))
+    t.drums(b, d1f if b % 4 == 3 else d1)
+t.save('song_fight1', 32)
+
+# --- 2: trap / drill gangsta, 150 BPM, A minor - sparse menacing lead, hi-hat rolls, booming bass ---
+t = Tune(150); t.prog(1, SAW); t.prog(2, SQUARE)
+L2 = bars('A4 - - - - - C5 - B4 - - - A4 - - -',
+          '. . E5 - - - D5 - C5 - B4 - A4 - - -',
+          'A4 - - - C5 - - - E5 - - - D5 - C5 -',
+          'E5 - F5 - E5 - C5 - B4 - - - . . . .')
+B2 = bars('A1 - - - A1 - A2 - E2 - - - A1 - - -',
+          'A1 - - - A1 - A2 - F2 - - - G2 - - -')
+d2 = 'k.hhs.h.k.hhs.hh'; d2f = 'k.hhs.h.k.hssssss'[:16]
+for b in range(8):
+    t.line(1, b, L2[b % 4], V(12), unit=0.25, gate=0.9)
+    t.line(3, b, B2[b % 2], 110, unit=0.25, gate=0.85)
+    t.note(2, b * 4 + 2, 0.3, N('C4'), V(7))
+    t.drums(b, d2f if b % 4 == 3 else d2, 104)
+t.save('song_fight2', 32)
+
+# --- 3: boom-bap gangsta rap, 140 BPM, C minor - a soul-sample riff and a walking bass ---
+t = Tune(140); t.prog(1, PIANO); t.prog(2, STRINGS)
+L3 = bars('G4 - Bb4 - C5 - Eb5 - D5 - C5 - Bb4 - G4 -',
+          'Ab4 - G4 - F4 - G4 - Ab4 - Bb4 - C5 - - -',
+          'G4 - Bb4 - C5 - Eb5 - F5 - Eb5 - D5 - C5 -',
+          'Bb4 - C5 - D5 - Eb5 - D5 - C5 - Bb4 - G4 -')
+B3 = bars('C2 - - G2 C3 - - G2 Ab2 - - Eb2 F2 - G2 -',
+          'C2 - - G2 C3 - - Bb2 Ab2 - F2 - G2 - - -')
+d3 = 'k...s..kk...s...'; d3b = 'k..ks..k.k..s..o'
+for b in range(8):
+    t.line(1, b, L3[b % 4], V(11), unit=0.25, gate=0.85)
+    t.line(3, b, B3[b % 2], 110, unit=0.25, gate=0.8)
+    t.drums(b, d3b if b % 2 else d3, 112)
+t.save('song_fight3', 32)
+
+# --- 4: heavy-metal gallop, 150 BPM, D minor - NWOBHM gallop, power-chord stabs, a soaring lead ---
+t = Tune(150); t.prog(1, SAW); t.prog(2, SQUARE)
+L4 = bars('D5 - - - A5 - - - F5 - - - A5 - - -',
+          'D5 - E5 - F5 - E5 - D5 - C5 - A4 - - -',
+          'F5 - - - E5 - - - D5 - - - C5 - A4 -',
+          'A5 - - - G5 - F5 - E5 - D5 - E5 - F5 -')
+B4 = bars('D2 . D2 D2 . D2 D2 . D2 D2 . D2 C2 . A1 .',
+          'D2 . D2 D2 . D2 Bb1 . Bb1 Bb1 . Bb1 C2 . C2 .')
+for b in range(8):
+    t.line(1, b, L4[b % 4], V(13), unit=0.25, gate=0.8)
+    t.line(3, b, B4[b % 2], 110, unit=0.25, gate=0.7)
+    t.note(2, b * 4, 0.4, N('D3'), V(9)); t.note(2, b * 4 + 2.5, 0.3, N('F3'), V(8))
+    t.drums(b, 'k.ksk.k.k.ksk.ks', 108)
+t.save('song_fight4', 32)
+
+# --- 5: G-funk gangsta, 145 BPM, G minor - a whiny portamento lead over a funky syncopated bass ---
+t = Tune(145); t.prog(1, SAW); t.prog(2, SQUARE)
+L5 = bars('D5 - - - F5 - D5 - C5 - D5 - Bb4 - - -',
+          'D5 - - - G5 - F5 - D5 - C5 - A4 - - -',
+          'Bb4 - - - D5 - C5 - Bb4 - A4 - G4 - - -',
+          'G5 - F5 - D5 - C5 - D5 - - - . . . .')
+B5 = bars('G1 - - G2 - G1 D2 - G1 - - G2 - F2 - -',
+          'G1 - - G2 - G1 Eb2 - F2 - - D2 - D2 - -')
+for b in range(8):
+    t.line(1, b, L5[b % 4], V(12), unit=0.25, gate=0.9)
+    t.line(3, b, B5[b % 2], 110, unit=0.25, gate=0.75)
+    t.note(2, b * 4 + 1, 0.3, N('Bb3'), V(7)); t.note(2, b * 4 + 3, 0.3, N('D4'), V(7))
+    t.drums(b, 'k.h.s.h.kkh.s.h.', 104)
+t.save('song_fight5', 32)
+
+# --- 6: death / industrial metal, 170 BPM, E minor - a brutal chromatic chug and blasting drums ---
+t = Tune(170); t.prog(1, SAW); t.prog(2, SQUARE)
+L6 = bars('E5 E5 F5 E5 E5 F5 E5 E5 G5 F5 E5 E5 D#5 E5 E5 E5',
+          'E5 E5 F5 E5 E5 G5 E5 E5 A5 G5 F5 E5 D5 C5 B4 B4',
+          'E5 E5 F5 E5 E5 F5 E5 E5 B5 A5 G5 F5 E5 D5 C5 B4',
+          'C5 C5 C5 B4 B4 B4 A4 A4 G4 G4 A4 B4 C5 D5 E5 E5')
+B6 = bars('E1 E1 E1 F1 E1 E1 E1 F1 E1 E1 E1 G1 E1 E1 D1 D1',
+          'E1 E1 E1 F1 E1 E1 D1 D1 C1 C1 C1 D1 E1 E1 E1 E1')
+for b in range(8):
+    t.line(1, b, L6[b % 4], V(13), unit=0.25, gate=0.55)
+    t.line(3, b, B6[b % 2], 110, unit=0.25, gate=0.6)
+    t.drums(b, 'ksksksksksksksks' if b % 2 else 'ksksksksksksssss', 110)
+t.save('song_fight6', 32)
+
+# --- 7: hardcore punk, 180 BPM, E - fast downstroke power chords, a d-beat, a shouty lead ---
+t = Tune(180); t.prog(1, SQUARE); t.prog(2, SQUARE)
+L7 = bars('E5 E5 E5 E5 E5 E5 E5 E5 G5 G5 G5 G5 G5 G5 G5 G5',
+          'A5 A5 A5 A5 A5 A5 A5 A5 G5 G5 G5 G5 E5 E5 E5 E5',
+          'E5 - E5 - G5 - A5 - B5 - A5 - G5 - E5 -',
+          'D5 D5 E5 E5 G5 G5 A5 A5 B5 B5 B5 B5 B5 B5 B5 B5')
+B7 = bars('E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2 E2',
+          'A2 A2 A2 A2 A2 A2 A2 A2 G2 G2 G2 G2 E2 E2 E2 E2')
+for b in range(8):
+    t.line(1, b, L7[b % 4], V(13), unit=0.25, gate=0.7)
+    t.line(3, b, B7[0] if b % 4 != 1 else B7[1], 110, unit=0.25, gate=0.85)
+    for q in range(4): t.note(2, b * 4 + q, 0.22, N('B3'), V(9))   # the fifth, hammered
+    t.drums(b, 'ksksksksksksksss' if b % 4 == 3 else 'ksksksksksksksks', 112)
+t.save('song_fight7', 32)
+
+# --- 8: skate / pop-punk, 175 BPM, A - a catchy palm-muted lead over a driving root bass ---
+t = Tune(175); t.prog(1, SQUARE); t.prog(2, SAW)
+L8 = bars('A5 - - - C#6 - A5 - E5 - - - A5 - - -',
+          'B5 - - - A5 - F#5 - E5 - D5 - C#5 - - -',
+          'D5 - E5 - F#5 - A5 - B5 - A5 - F#5 - E5 -',
+          'E5 - F#5 - E5 - C#5 - D5 - E5 - A5 - - -')
+B8 = bars('A1 A1 A1 A1 A1 A1 A1 A1 D2 D2 D2 D2 D2 D2 D2 D2',
+          'E2 E2 E2 E2 E2 E2 E2 E2 A1 A1 A1 A1 A1 A1 A1 A1')
+for b in range(8):
+    t.line(1, b, L8[b % 4], V(13), unit=0.25, gate=0.8)
+    t.line(3, b, B8[b % 2], 110, unit=0.25, gate=0.8)
+    t.note(2, b * 4 + 2, 0.3, N('E4'), V(8))
+    t.drums(b, 'k.h.s.h.k.h.s.hh', 108)
+t.save('song_fight8', 32)
 
 # ---- Guido's boys: slow and heavy, D minor
 t = Tune(72); t.prog(1, REED); t.prog(2, STRINGS)
@@ -351,3 +458,13 @@ for b in range(8):
     for i in range(8): t.note(2, b * 4 + i * 0.5, 0.45, N(a[(0, 1, 2, 1)[i & 3]]), V(6))
 t.save('song_notice', 32)
 print('make_snd: wrote', len([f for f in os.listdir(snd) if f.endswith('.mid')]), 'files in tools/snd')
+import shutil
+# The six cop-fight candidates are kept in tools/fight_tracks (not compiled); only the chosen one is copied to
+# tools/snd/song_fight.mid and built into the ROM.  To switch tracks, change DEFAULT_FIGHT below and rerun.
+DEFAULT_FIGHT = 1
+ftdir = os.path.join(here, 'fight_tracks'); os.makedirs(ftdir, exist_ok=True)
+for i in range(1, 9):
+    shutil.move(os.path.join(snd, 'song_fight%d.mid' % i), os.path.join(ftdir, 'fight%d.mid' % i))
+shutil.copy(os.path.join(ftdir, 'fight%d.mid' % DEFAULT_FIGHT), os.path.join(snd, 'song_fight.mid'))
+print('make_snd: fight candidates in tools/fight_tracks; song_fight.mid = fight%d' % DEFAULT_FIGHT)
+

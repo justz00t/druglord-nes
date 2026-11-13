@@ -41,23 +41,23 @@ static void hit_star(u8 side, u8 i) {
 static void cops_lights(void) {
     u8 y, f, e;
     page();
-    for (y = 0; y <= 12; y++) fill(0, y, 8, 32);         /* solid blocks fill everything but the title band */
-    for (y = 15; y <= 29; y++) fill(0, y, 8, 32);
-    ink = 0; ps_at(2, 13, "THE COPS ARE ON YOUR TAIL!!!");   /* 28 chars, centred, in the middle */
-    colour_cols(0, 12, 0, 7, 0);  colour_cols(0, 12, 8, 15, 1);    /* left half palette 0, right half palette 1 */
-    colour_cols(15, 29, 0, 7, 0); colour_cols(15, 29, 8, 15, 1);
-    colour_rows(13, 14, 3);                              /* the flashing title band */
+    for (y = 0; y <= 13; y++) fill(0, y, 8, 32);         /* solid blocks fill everything but the title band */
+    for (y = 16; y <= 29; y++) fill(0, y, 8, 32);
+    ink = 0; ps_at(2, 14, "THE COPS ARE ON YOUR TAIL!!!");   /* 28 chars, centred, in the middle */
+    colour_cols(0, 13, 0, 7, 0);  colour_cols(0, 13, 8, 15, 1);    /* left half palette 0, right half palette 1 */
+    colour_cols(16, 29, 0, 7, 0); colour_cols(16, 29, 8, 15, 1);
+    colour_rows(14, 15, 3);                              /* the title band (its own attribute block: no bleed) */
     ppu_off();
-    latch = PPUSTATUS; PPUADDR = 0x3F; PPUADDR = 0x00; PPUDATA = 0x0F;   /* backdrop black */
+    latch = PPUSTATUS;
+    PPUADDR = 0x3F; PPUADDR = 0x00; PPUDATA = 0x0F;      /* backdrop black */
+    PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = 0x30;      /* palette 3 colour 1: solid white (the title) */
     ppu_show();
-    song(SONG_FIGHT);                                    /* the fight music, from here to the last shot */
-    seq_sfx(SFX_SIREN);                                  /* the siren wails over it */
+    seq_sfx(SFX_SIREN);                                  /* the siren wails; no music until the fight itself */
     for (f = 0; f < 150; f++) {
         wait_vblank(); frames++;
         latch = PPUSTATUS;
         if (f & 8) { PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = 0x0F; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x11; }  /* right half blue */
         else       { PPUADDR = 0x3F; PPUADDR = 0x01; PPUDATA = 0x16; PPUADDR = 0x3F; PPUADDR = 0x05; PPUDATA = 0x0F; }  /* left half red */
-        PPUADDR = 0x3F; PPUADDR = 0x0D; PPUDATA = (f & 16) ? 0x0F : 0x30;   /* the title flashes white */
         PPUCTRL = bgctl | 0x80; PPUSCROLL = 0; PPUSCROLL = 0;
         music_update();
         e = read_pad(); { u8 d = e & ~pad_old; pad_old = e; e = d; }
@@ -97,6 +97,7 @@ void cop_fight(void) {
         status -= 5;
     }
     clear_screen();
+    song(SONG_FIGHT);                                    /* the fight music starts here, on the fight screen */
     ink = 1; ps_at(1, 3, "YOU"); ps_at(17, 3, "COPS");
     ink = 0;
     php[0] = health;

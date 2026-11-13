@@ -370,9 +370,9 @@ void credits_screen(void) {
     for (i = 0; i < 64; i++) OAM[i * 4] = 0xFF;
     APU(0x14) = 0x02;                                    /* no stray sprites */
     /* ---- the Erwin block drops in as one piece, from above the screen, by scrolling the whole screen down ---- */
-    sx = 120 << 4; vel = 0;
+    sx = 64 << 4; vel = 0;                               /* start at the top edge (scrolling past 64 would wrap the block to the bottom) */
     wait_vblank(); frames++;                             /* turn the screen on already scrolled up, so it enters from the top */
-    PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 120;
+    PPUCTRL = bgctl | 0x80; latch = PPUSTATUS; PPUSCROLL = 0; PPUSCROLL = 64;
     PPUMASK = 0x0A; ppu_on = 1;
     seq_sfx(SFX_CREDFALL);                               /* the cartoon slide whistle */
     while (sx) {
